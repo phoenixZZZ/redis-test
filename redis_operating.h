@@ -52,8 +52,7 @@ int redis_operating_set(apr_pool_t *pool, const char *ip, int port, struct timev
 
 int redis_operating_mset(apr_pool_t *pool, const char *ip, int port, struct timeval tv, apr_hash_t *hash);
 
-int redis_operating_get(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, 
-						 char *field, char **value);
+int redis_operating_get(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, char **value);
 
 int redis_operating_mget(apr_pool_t *pool, const char *ip, int port, 
 						  struct timeval tv,osip_ring_t *key_ring, osip_ring_t **val_ring);

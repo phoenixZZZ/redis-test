@@ -220,6 +220,7 @@ int __redis_operating_execution_multi(apr_pool_t *pool, redisContext* gClient, o
 	redisReply* reply = NULL;
 	osip_ring_iterator_t *it = NULL;
 	void *obj = NULL;
+	char *strcmd = NULL;
 
 	if(NULL == gClient)
 	{
@@ -240,7 +241,7 @@ int __redis_operating_execution_multi(apr_pool_t *pool, redisContext* gClient, o
 	osip_ring_create_iterator(pool, &it);
 	for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
 	{
-		char *strcmd = (char *)obj;
+		strcmd = (char *)obj;
 		if(__redis_operating_execution(gClient, strcmd, NULL, NULL) != 0)
 		{
 			printf("Info.redis command exec failed:%s.[%s:%d]\n", strcmd, __FILE__, __LINE__);
@@ -272,6 +273,7 @@ apr_hash_t* __redis_operating_reader_multi(redisContext* gClient, apr_pool_t *po
 	osip_ring_iterator_t *it = NULL;
 	redisReply* reply = NULL;
 	void *obj = NULL;
+	char *strcmd = NULL;
 
 	if(ring == NULL)
 	{
@@ -294,7 +296,7 @@ apr_hash_t* __redis_operating_reader_multi(redisContext* gClient, apr_pool_t *po
 	osip_ring_create_iterator(pool, &it);
 	for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
 	{
-		char *strcmd = (char *)obj;
+		strcmd = (char *)obj;
 		tmp_ring = __redis_operating_reader(pool, gClient, strcmd);
 		if(tmp_ring == NULL)
 		{
@@ -330,6 +332,7 @@ int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, struct time
 	char *strcmd = NULL;
 	int ret = -1;
 	redis_reply_result_t *reply_result = NULL;
+	redisContext* gClient = NULL;
 
 	if(NULL == key || NULL == pool || NULL == field || NULL == value)
 	{
@@ -339,8 +342,6 @@ int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, struct time
 	}
 
 	strcmd = apr_psprintf(pool, "HSET %s %s %s", key, field, value);
-
-	redisContext* gClient = NULL;
 	gClient = __redis_operating_connect(ip, port, &tv);
 	if(NULL == gClient)
 	{
@@ -349,6 +350,7 @@ int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 	
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
 	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
 	if(ret != 0)
 	{
@@ -450,7 +452,7 @@ int redis_operating_hget(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 
-	strcmd = apr_psprintf(pool, "HSET %s %s %s", key, field, value);
+	strcmd = apr_psprintf(pool, "HGET %s %s", key, field);
 
 	redisContext* gClient = NULL;
 	gClient = __redis_operating_connect(ip, port, &tv);
@@ -461,6 +463,7 @@ int redis_operating_hget(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
 	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
 	if(ret != 0)
 	{
@@ -663,8 +666,7 @@ END:
 	return ret;
 }
 
-int redis_operating_get(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, 
-						 char *field, char **value)
+int redis_operating_get(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, char **value)
 {
 	char *strcmd = NULL;
 	int ret = -1;
@@ -677,17 +679,18 @@ int redis_operating_get(apr_pool_t *pool, const char *ip, int port, struct timev
 		goto END;
 	}
 
-	strcmd = apr_psprintf(pool, "HSET %s %s %s", key, field, value);
+	strcmd = apr_psprintf(pool, "GET %s", key);
 
 	redisContext* gClient = NULL;
 	gClient = __redis_operating_connect(ip, port, &tv);
 	if(NULL == gClient)
 	{
-		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		printf("Info.Connect to redis failed.[%s:%d]\n", __FILE__, __LINE__);
 		ret = -1;
 		goto END;
 	}
 
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
 	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
 	if(ret != 0)
 	{
@@ -709,7 +712,7 @@ END:
 }
 
 int redis_operating_mget(apr_pool_t *pool, const char *ip, int port, 
-						  struct timeval tv,osip_ring_t *key_ring, osip_ring_t **val_ring)
+						  struct timeval tv, osip_ring_t *key_ring, osip_ring_t **val_ring)
 {
 	//char *strcmd = NULL;
 	int ret = -1;
@@ -870,11 +873,18 @@ END:
 
 int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring)
 {
-	char *strcmd = NULL;
+	//char *strcmd = NULL;
 	int ret = -1;
 	osip_ring_iterator_t *it = NULL;
 	redis_reply_result_t *reply_result = NULL;
 	void *obj = NULL;
+
+	apr_pool_t *subpool1 = NULL;
+	apr_pool_t *subpool2 = NULL;
+	hash_string_t *strcmd = apr_pcalloc(pool, sizeof(hash_string_t));
+
+	apr_pool_create(&subpool1, pool);
+	strcmd->pool = subpool1;
 
 	if(NULL == ring || NULL == key || NULL == pool)
 	{
@@ -883,12 +893,15 @@ int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 
-	strcmd = apr_psprintf(pool, "SADD %s ", key);
+	strcmd->string = apr_psprintf(pool, "SADD %s ", key);
 
 	osip_ring_create_iterator(pool, &it);
 	for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
 	{
-		apr_pstrcat(pool, strcmd, " \"", (char *)obj, "\"", NULL);
+		apr_pool_create(&subpool2, pool);
+		strcmd->string = apr_pstrcat(pool, strcmd->string, " ", (char *)obj, " ", NULL);
+		apr_pool_destroy(strcmd->pool);
+		strcmd->pool = subpool2;
 	}
 	osip_ring_destroy_iterator(it);
 
@@ -901,14 +914,19 @@ int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 	
-	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
+
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
+	ret = __redis_operating_execution(gClient, strcmd->string, pool, reply_result);
 	if(ret != 0)
 	{
 		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
 		ret = -1;
 		goto END;
 	}
-	ret = 0;
+	if(reply_result && 3 == reply_result->type)
+		ret = 0;
+	else
+		ret = -1;
 
 END:
     if (NULL != gClient)
@@ -920,11 +938,18 @@ END:
 
 int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring)
 {
-	char *strcmd = NULL;
+	//char *strcmd = NULL;
 	int ret = -1;
 	redis_reply_result_t *reply_result = NULL;
 	void *obj = NULL;
 	osip_ring_iterator_t * it = NULL;
+
+	apr_pool_t *subpool1 = NULL;
+	apr_pool_t *subpool2 = NULL;
+	hash_string_t *strcmd = apr_pcalloc(pool, sizeof(hash_string_t));
+
+	apr_pool_create(&subpool1, pool);
+	strcmd->pool = subpool1;
 
 	if(NULL == ring || NULL == key || NULL == pool)
 	{
@@ -933,12 +958,15 @@ int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 
-	strcmd = apr_psprintf(pool, "SREM %s ", key);
+	strcmd->string = apr_psprintf(pool, "SREM %s ", key);
 
 	osip_ring_create_iterator(pool, &it);
 	for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
 	{
-		apr_pstrcat(pool, strcmd, " \"", (char *)obj, "\"", NULL);
+		apr_pool_create(&subpool2, pool);
+		strcmd->string = apr_pstrcat(pool, strcmd->string, " ", (char *)obj, " ", NULL);
+		apr_pool_destroy(strcmd->pool);
+		strcmd->pool = subpool2;
 	}
 	osip_ring_destroy_iterator(it);
 
@@ -951,31 +979,43 @@ int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 	
-	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
+	ret = __redis_operating_execution(gClient, strcmd->string, pool, reply_result);
 	if(ret != 0)
 	{
 		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
 		ret = -1;
 		goto END;
 	}
-	ret = 0;
+
+	if(reply_result && 3 == reply_result->type)
+		ret = 0;
+	else
+		ret = -1;
 
 END:
     if (NULL != gClient)
     {
         redisFree(gClient);
 	}
-	return ret;	
+	return ret;
 }
 
 int redis_operating_del(apr_pool_t *pool, const char *ip, int port, struct timeval tv, osip_ring_t *key_ring)
 {
-	char *strcmd = NULL;
+	//char *strcmd = NULL;
 	int ret = -1;
 	redis_reply_result_t *reply_result = NULL;
 	redisContext* gClient = NULL;
 	void *obj = NULL;
 	osip_ring_iterator_t *it = NULL;
+
+	apr_pool_t *subpool1 = NULL;
+	apr_pool_t *subpool2 = NULL;
+	hash_string_t *strcmd = apr_pcalloc(pool, sizeof(hash_string_t));
+
+	apr_pool_create(&subpool1, pool);
+	strcmd->pool = subpool1;
 
 	if(NULL == key_ring || NULL == pool)
 	{
@@ -984,12 +1024,14 @@ int redis_operating_del(apr_pool_t *pool, const char *ip, int port, struct timev
 		goto END;
 	}
 
-	strcmd = apr_pstrdup(pool, "DEL ");
-
+	strcmd->string = apr_pstrdup(pool, "DEL ");
 	osip_ring_create_iterator(pool, &it);
 	for(obj = osip_ring_get_first(key_ring, it); obj; obj = osip_ring_get_next(it))
 	{
-		apr_pstrcat(pool, strcmd, " ", (char *)obj, NULL);
+		apr_pool_create(&subpool2, pool);
+		strcmd->string = apr_pstrcat(pool, strcmd->string, " ", (char *)obj, " ", NULL);
+		apr_pool_destroy(strcmd->pool);
+		strcmd->pool = subpool2;
 	}
 	osip_ring_destroy_iterator(it);
 
@@ -1001,14 +1043,23 @@ int redis_operating_del(apr_pool_t *pool, const char *ip, int port, struct timev
 		goto END;
 	}
 	
-	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
+	ret = __redis_operating_execution(gClient, strcmd->string, pool, reply_result);
 	if(ret != 0)
 	{
 		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
 		ret = -1;
 		goto END;
 	}
-	ret = 0;
+
+	if(reply_result && 3 == reply_result->type)
+	{
+		int itmp = atoi(reply_result->result);
+		if(itmp > 0) ret = 0;
+		else ret = -1;
+	}
+	else
+		ret = -1;
 
 END:
     if (NULL != gClient)
