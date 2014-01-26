@@ -574,7 +574,7 @@ int redis_operating_hgetall(apr_pool_t *pool, const char *ip, int port,
 	apr_pool_create(&subpool1, pool);
 	strcmd->pool = subpool1;
 
-	if(NULL == key_ring || NULL == pool)
+	if(NULL == key || NULL == pool)
 	{
 		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
 		ret = -1;
@@ -930,10 +930,6 @@ END:
 	return ret;
 }
 
-/*int redis_operating_hdel(const char *ip, int port, const struct timeval tv, char *strcmd);
-
-  int redis_operating_hgetall_hvals(const char *ip, int port, const struct timeval tv, char *strcmd);*/
-
 int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val)
 {
 	//char *strcmd = NULL;
@@ -1006,7 +1002,7 @@ END:
 	return ret;
 }
 
-int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring)
+int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val)
 {
 	//char *strcmd = NULL;
 	int ret = -1;
@@ -1028,17 +1024,24 @@ int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct time
 		goto END;
 	}
 
-	strcmd->string = apr_psprintf(pool, "SREM %s ", key);
+	strcmd->string = apr_psprintf(subpool1, "SREM %s ", key);
 
-	osip_ring_create_iterator(pool, &it);
-	for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
+	if(NULL == str_val)
 	{
-		apr_pool_create(&subpool2, pool);
-		strcmd->string = apr_pstrcat(pool, strcmd->string, " ", (char *)obj, " ", NULL);
-		apr_pool_destroy(strcmd->pool);
-		strcmd->pool = subpool2;
+		osip_ring_create_iterator(pool, &it);
+		for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
+		{
+			apr_pool_create(&subpool2, pool);
+			strcmd->string = apr_pstrcat(subpool2, strcmd->string, " ", (char *)obj, " ", NULL);
+			apr_pool_destroy(strcmd->pool);
+			strcmd->pool = subpool2;
+		}
+		osip_ring_destroy_iterator(it);
 	}
-	osip_ring_destroy_iterator(it);
+	else
+	{
+		strcmd->string = apr_pstrcat(pool, strcmd->string, " ", str_val, " ", NULL);
+	}
 
 	redisContext* gClient = NULL;
 	gClient = __redis_operating_connect(ip, port, &tv);
@@ -1062,6 +1065,167 @@ int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct time
 		ret = 0;
 	else
 		ret = -1;
+
+END:
+    if (NULL != gClient)
+    {
+        redisFree(gClient);
+	}
+	apr_pool_destroy(strcmd->pool);
+	return ret;
+}
+
+int redis_operating_scard(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key)
+{
+	//char *strcmd = NULL;
+	int ret = -1;
+	osip_ring_iterator_t *it = NULL;
+	redis_reply_result_t *reply_result = NULL;
+	void *obj = NULL;
+
+	apr_pool_t *subpool1 = NULL;
+	apr_pool_t *subpool2 = NULL;
+	hash_string_t *strcmd = apr_pcalloc(pool, sizeof(hash_string_t));
+
+	apr_pool_create(&subpool1, pool);
+	strcmd->pool = subpool1;
+
+	if(NULL == key || NULL == pool)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+
+	strcmd->string = apr_psprintf(pool, "SCARD %s ", key);
+
+	redisContext* gClient = NULL;
+	gClient = __redis_operating_connect(ip, port, &tv);
+	if(NULL == gClient)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+	
+
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
+	ret = __redis_operating_execution(gClient, strcmd->string, pool, reply_result);
+	if(ret != 0)
+	{
+		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+	if(reply_result && 3 == reply_result->type)
+		ret = reply_result->result;
+	else
+		ret = -1;
+
+END:
+    if (NULL != gClient)
+    {
+        redisFree(gClient);
+	}
+	apr_pool_destroy(strcmd->pool);
+	return ret;
+}
+
+int redis_operating_smembers(apr_pool_t *pool, const char *ip, int port, 
+							struct timeval tv, char *key, osip_ring_t **val_ring)
+{
+	//char *strcmd = NULL;
+	int ret = -1;
+	apr_hash_index_t *hi = NULL;
+	void *val = NULL;
+	osip_ring_iterator_t *it = NULL;
+	void *obj = NULL;
+	osip_ring_t *tmp_ring = NULL;
+
+	apr_pool_t *subpool1 = NULL;
+	apr_pool_t *subpool2 = NULL;
+	hash_string_t *strcmd = apr_pcalloc(pool, sizeof(hash_string_t));
+
+	apr_pool_create(&subpool1, pool);
+	strcmd->pool = subpool1;
+
+	if(NULL == key || NULL == pool)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+
+	strcmd->string = apr_psprintf(subpool1, "SMEMBERS %s", key);
+
+	redisContext* gClient = NULL;
+	gClient = __redis_operating_connect(ip, port, &tv);
+	if(NULL == gClient)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+
+	tmp_ring = __redis_operating_reader(pool, gClient, strcmd->string);
+	if(NULL == tmp_ring)
+	{
+		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+
+	*val_ring = tmp_ring;
+	ret = 0;
+
+END:
+    if (NULL != gClient)
+    {
+        redisFree(gClient);
+	}
+	apr_pool_destroy(strcmd->pool);
+	return ret;
+}
+
+
+int redis_operating_sismember(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, char *val)
+{
+	char *strcmd = NULL;
+	int ret = -1;
+	redis_reply_result_t *reply_result = NULL;
+
+	if(NULL == key || NULL == pool)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+
+	strcmd = apr_psprintf(pool, "SISMEMBER %s %s", key, val);
+
+	redisContext* gClient = NULL;
+	gClient = __redis_operating_connect(ip, port, &tv);
+	if(NULL == gClient)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
+	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
+	if(0 != ret)
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(3 != reply_result->type || 0 != strcasecmp(reply_result->result, "1"))
+	{
+		ret = -1;
+		goto END;
+	}
+	ret = 0;
 
 END:
     if (NULL != gClient)
@@ -1117,7 +1281,6 @@ END:
 	}
 	return ret;
 }
-
 
 int redis_operating_del(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key)
 {
@@ -1312,7 +1475,7 @@ END:
 	return ret;
 }
 
-int redis_operating_zrem(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring)
+int redis_operating_zrem(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val)
 {
 	//char *strcmd = NULL;
 	int ret = -1;
@@ -1335,16 +1498,22 @@ int redis_operating_zrem(apr_pool_t *pool, const char *ip, int port, struct time
 	}
 
 	strcmd->string = apr_psprintf(pool, "ZREM %s ", key);
-
-	osip_ring_create_iterator(pool, &it);
-	for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
+	if(NULL == str_val)
 	{
-		apr_pool_create(&subpool2, pool);
-		strcmd->string = apr_pstrcat(pool, strcmd->string, " ", (char *)obj, " ", NULL);
-		apr_pool_destroy(strcmd->pool);
-		strcmd->pool = subpool2;
+		osip_ring_create_iterator(pool, &it);
+		for(obj = osip_ring_get_first(ring, it); obj; obj = osip_ring_get_next(it))
+		{
+			apr_pool_create(&subpool2, pool);
+			strcmd->string = apr_pstrcat(subpool2, strcmd->string, " ", (char *)obj, " ", NULL);
+			apr_pool_destroy(strcmd->pool);
+			strcmd->pool = subpool2;
+		}
+		osip_ring_destroy_iterator(it);
 	}
-	osip_ring_destroy_iterator(it);
+	else
+	{
+		strcmd->string = apr_pstrcat(subpool2, strcmd->string, " ", str_val, " ", NULL);
+	}
 
 	redisContext* gClient = NULL;
 	gClient = __redis_operating_connect(ip, port, &tv);
@@ -1429,6 +1598,62 @@ END:
     {
         redisFree(gClient);
 	}
+	return ret;
+}
+
+int redis_operating_zcard(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key)
+{
+	//char *strcmd = NULL;
+	int ret = -1;
+	osip_ring_iterator_t *it = NULL;
+	redis_reply_result_t *reply_result = NULL;
+	void *obj = NULL;
+
+	apr_pool_t *subpool1 = NULL;
+	apr_pool_t *subpool2 = NULL;
+	hash_string_t *strcmd = apr_pcalloc(pool, sizeof(hash_string_t));
+
+	apr_pool_create(&subpool1, pool);
+	strcmd->pool = subpool1;
+
+	if(NULL == key || NULL == pool)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+
+	strcmd->string = apr_psprintf(pool, "ZCARD %s ", key);
+
+	redisContext* gClient = NULL;
+	gClient = __redis_operating_connect(ip, port, &tv);
+	if(NULL == gClient)
+	{
+		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+	
+
+	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
+	ret = __redis_operating_execution(gClient, strcmd->string, pool, reply_result);
+	if(ret != 0)
+	{
+		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret = -1;
+		goto END;
+	}
+	if(reply_result && 3 == reply_result->type)
+		ret = reply_result->result;
+	else
+		ret = -1;
+
+END:
+    if (NULL != gClient)
+    {
+        redisFree(gClient);
+	}
+	apr_pool_destroy(strcmd->pool);
 	return ret;
 }
 
@@ -1571,23 +1796,21 @@ END:
 	return ret_ring;
 }
 
-int __redis_set_class_num(apr_pool_t *pool, char *type, int id, void *value, func_call_class func)
+int __redis_set_class_num(apr_pool_t *pool, char *value, char *type, int id)
 {
 	int ret = -1;
 	char *key = NULL;
-	char *val = NULL;
 
-	if(NULL == type || NULL == value || NULL == func || id <=0)
+	if(NULL == type || NULL == value || id <=0)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	val = func(pool, value);
-	if(val)
+	if(value)
 	{
 		key = apr_psprintf(pool, "%s:%d", type, id);
-		if(redis_operating_hmset(pool, __strIP, __port, __timeout, key, NULL, val) != -1)
+		if(redis_operating_hset(pool, __strIP, __port, __timeout, key, NULL, value) != -1)
 		{
 			ret = 0;
 			goto END;
@@ -1620,25 +1843,15 @@ END:
 }
 
 
-int __redis_set_class_timerheap(apr_pool_t *pool, char *type, char *val, apr_time_t timer)
+int __redis_set_class_timerheap(apr_pool_t *pool, char *key, char *val, apr_time_t timer)
 {
 	int ret = -1;
-	char *key = NULL;
 	char *tmp = NULL;
 
-	if(NULL == pool || NULL == type || NULL == val)
+	if(NULL == pool || NULL == key || NULL == val)
 	{
 		ret = -1;
 		goto END;
-	}
-
-	if(0 == strcasecmp(key, "yaproxy_lock_t"))
-	{
-		key = "yaproxy_lock_timerheap";
-	}
-	else
-	{
-		
 	}
 
 	tmp = apr_psprintf(pool, "%ld %s", timer, val);
@@ -1649,25 +1862,15 @@ END:
 	return ret;
 }
 
-int redis_get_class_timerheap(apr_pool_t *pool, char *type, apr_time_t timer, osip_ring_t **result)
+int redis_get_class_timerheap(apr_pool_t *pool, char *key, apr_time_t timer, osip_ring_t **result)
 {
 	int ret = -1;
-	char *key = NULL;
 	char *sorce = NULL;
 
-	if(NULL == pool || NULL == type)
+	if(NULL == pool || NULL == key)
 	{
 		ret = -1;
 		goto END;
-	}
-
-	if(0 == strcasecmp(key, "yaproxy_lock_t"))
-	{
-		key = "yaproxy_lock_timerheap";
-	}
-	else
-	{
-		
 	}
 
 	sorce = apr_psprintf(pool, "%ld", timer);
@@ -1678,13 +1881,34 @@ int redis_get_class_timerheap(apr_pool_t *pool, char *type, apr_time_t timer, os
 		goto END;
 	}
 
-	if(result && redis_operating_zrem(pool, __strIP, __port, __timeout, key, result) != 0)
+	if(result && redis_operating_zrem(pool, __strIP, __port, __timeout, key, result, NULL) != 0)
 	{
 		*result = NULL;
 		ret = -1;
 		goto END;
 	}
 
+	ret = 0;
+END:
+	return ret;
+}
+
+int __redis_set_class_list(apr_pool_t *pool, char *type, char *member_name, char *member_val, int id)
+{
+	int ret = -1;
+	char *key = NULL;
+	char *val = NULL;
+
+	if(NULL == pool || NULL == type || id <=0)
+	{
+		ret = -1;
+		goto END;
+	}
+
+	key = apr_psprintf(pool, "%s:%s:%s", type, id, member_name);
+	val = apr_psprintf(pool, "%d", member_val);
+	redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, val);
+	
 	ret = 0;
 END:
 	return ret;
@@ -1755,76 +1979,521 @@ END:
 
 int redis_del_objects_bymember(apr_pool_t *pool, char *type, char *member, ...)
 {
+	va_list arg_ptr;
+	int va_count = 0;
+
+	char *tmp = NULL;
+	char *arg_set = NULL;
+
+	osip_ring_t *arg_ring = NULL;
+	osip_ring_t *ret_ring = NULL;
+
+	if(0 != osip_ring_create(pool, &arg_ring))
+	{
+		printf("Error.Add RedisCommand failed.[%s:%d]\n",__FILE__, __LINE__);
+		ret_ring = NULL;
+		goto END;
+	}
+
+	//偶数集合为对应的name，奇数集合为对应的value
+	va_start(arg_ptr, member);
+	do
+	{
+		tmp = va_arg(arg_ptr, char *);
+		if(tmp && 0 == va_count%2)
+		{
+			arg_set = apr_pstrdup(pool, tmp);
+		}
+		else
+		{
+			arg_set = apr_pstrcat(pool, arg_set, tmp, NULL);
+			osip_ring_add(arg_ring, arg_set, -1);
+			arg_set = NULL;
+		}
+	}while(tmp != NULL);
+	va_end(arg_ptr);
+
+	if(redis_operating_sinter(pool, __strIP, __port, __timeout, arg_ring, &ret_ring) != 0)
+	{
+		ret_ring = NULL;
+		goto END;
+	}
+
 	
+
+END:
+	if (arg_ring != NULL)
+	{
+		void *obj = NULL;
+		osip_ring_iterator_t *it = NULL;
+
+		osip_ring_create_iterator(pool, &it);
+	    for(obj = osip_ring_get_first(arg_ring, it); obj; obj = osip_ring_get_next(it))
+		{
+			osip_ring_iterator_remove(it);
+		}
+	    osip_ring_destroy_iterator(it);
+	}
+	return ret_ring;
 }
 
 int redis_del_single_object_byid(apr_pool_t *pool, char *type, int id)
 {
 	int ret = -1;
-	osip_ring_t *val_ring = NULL;
-	osip_ring_iterator_t *it = NULL;
 	char *key = NULL;
 
-	key = apr_psprintf(pool, "%s:%d", type, id);
+	key = apr_psprintf(pool, "%s:%d:_indices", type, id);
 	if(0 != __redis_del_single_object_dictset(pool, type, id, key))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	key = apr_psprintf(pool, "%s:%d:_zindices", type, id);
+	if(0 != __redis_del_single_object_dictset(pool, type, id, key))
+	{
+		ret = -1;
+		goto END;
+	}
+	
+	if(0 == strcasecmp(type, "yaproxy_lock_t"))
+	{
+		key = "yaproxy_lock_timerheap";
+		if(0 != __redis_del_single_object_timerheap(pool, key, type, id))
+		{
+			ret = 0;
+			goto END;
+		}
+	}
+	else
 	{
 		
 	}
 
+	if(0 != redis_operating_del(pool, __strIP, __port, __timeout, key))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	ret = 0;
 END:
 	return ret;
 }
 
 int __redis_del_single_object_dictset(apr_pool_t *pool, char *type, int id, char *key)
 {
-	
-}
+	int ret = -1;
+	osip_ring_t *val_ring = NULL;
+	osip_ring_iterator_t *it = NULL;
+	void *obj = NULL;
+	int iCount = 0;
+	char *member_name = NULL;
+	char *member_val = NULL;
 
-int __redis_del_single_object_memberset(apr_pool_t *pool, char *key)
-{
-	
-}
-
-int redis_update_object_byid(apr_pool_t *pool, char *type, int id)
-{
-	
-}
-
-//proxy_lock moudle
-char* func_call_yaproxy_lock(apr_pool_t *pool, void *obj)
-{
-	char *result = NULL;
-	char *tmp = NULL;
-	yaproxy_lock_t *lock_obj = (yaproxy_lock_t *)obj;
-
-	if(NULL == lock_obj)
+	if(0 != redis_operating_smembers(pool, __strIP, __port, __timeout, key, &val_ring))
 	{
-		result = NULL;
+		ret = -1;
 		goto END;
 	}
 
-	result = apr_pstrdup(pool, "");
-	if(lock_obj->clientID)
+	osip_ring_create_iterator(pool, &it);
+	for(obj = osip_ring_get_first(val_ring, it); obj; obj = osip_ring_get_next(it))
 	{
-		tmp = apr_psprintf(pool, "%s", lock_obj->clientID);
-		result = apr_pstrcat(pool, result, tmp, NULL);
+		if(0 != __redis_del_single_object_memberset(pool, (char *)obj, id))
+		{
+			ret = -1;
+			goto END;
+		}
 	}
-	if(lock_obj->ipcGbID)
+	osip_ring_destroy_iterator(it);
+	ret = 0;
+END:
+	return ret;
+}
+
+int __redis_del_single_object_memberset(apr_pool_t *pool, char *key, int id)
+{
+	int ret = -1;
+
+	ret = redis_operating_scard(pool, __strIP, __port, __timeout, key);
+	if(ret <= 0)
 	{
-		tmp = apr_psprintf(pool, "%s", lock_obj->ipcGbID);
-		result = apr_pstrcat(pool, result, tmp, NULL);
+		goto END;
 	}
-	if(lock_obj->level)
+	else if(1 == ret)
 	{
-		tmp = apr_psprintf(pool, "%d", lock_obj->level);
-		result = apr_pstrcat(pool, result, tmp, NULL);
+		if(0 != redis_operating_del(pool, __strIP, __port, __timeout, key))
+		{
+			ret = -1;
+			goto END;
+		}
 	}
-	if(lock_obj->timer)
+	else
 	{
-		tmp = apr_psprintf(pool, "%ld", lock_obj->timer);
-		result = apr_pstrcat(pool, result, tmp, NULL);
+		if(0 != redis_operating_srem(pool, __strIP, __port, __timeout, key, NULL, apr_psprintf(pool, "%d", id)))
+		{
+			ret = -1;
+			goto END;
+		}
 	}
+	ret = 0;
 
 END:
-	return result;
+	return ret;
+}
+
+int __redis_del_single_object_timerheap(apr_pool_t *pool, char *key, char *type, int id)
+{
+	int ret = -1;
+
+	if(NULL == key || NULL == type)
+	{
+		ret = -1;
+		goto END;
+	}
+
+	ret = redis_operating_zcard(pool, __strIP, __port, __timeout, key);
+	if(ret <= 0)
+	{
+		goto END;
+	}
+	else if(1 == ret)
+	{
+		if(0 != redis_operating_del(pool, __strIP, __port, __timeout, key))
+		{
+			ret = -1;
+			goto END;
+		}
+	}
+	else
+	{
+		if(0 != redis_operating_zrem(pool, __strIP, __port, __timeout, key, NULL, apr_psprintf(pool, "%s:%d", type, id)))
+		{
+			ret = -1;
+			goto END;
+		}
+	}
+	ret = 0;
+END:
+	return ret;
+}
+
+/*
+int redis_update_single_object_byid(apr_pool_t *pool, char *type, int id, char member_name, char *new_member_val);
+
+int __redis_update_single_object_dictset(apr_pool_t *pool, char *type, char *old_member_val, 
+										 char *new_member_val, int id, char *key);
+
+int __redis_update_single_object_memberset(apr_pool_t *pool, char *type, char *member_name, 
+										   char *old_member_val, char *new_member_val, int id);
+
+int redis_update_single_object_timerheap(apr_pool_t *pool, char *key, char *type, int id);
+*/
+
+int redis_update_single_object_byid(apr_pool_t *pool, char *type, int id, char member_name, char *new_member_val)
+{
+	int ret = -1;
+	char *key = NULL;
+	char *old_member_val = NULL;
+
+	key = apr_psprintf(pool, "%s:%d", type, id);
+	if(0 != redis_operating_hget(pool, __strIP, __port, __timeout, key, member_name, &old_member_val))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	key = apr_psprintf(pool, "%s:%d:_indices", type, id);
+	if(0 != __redis_update_single_object_dictset(pool, type, member_name, old_member_val, new_member_val, id, key))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	key = apr_psprintf(pool, "%s:%d:_zindices", type, id);
+	if(0 != __redis_update_single_object_dictset(pool, type, member_name, old_member_val, new_member_val, id, key))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != redis_operating_hset(pool, __strIP, __port, __timeout, key, member_name, new_member_val))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	ret = 0;
+END:
+	return ret;
+}
+
+int __redis_update_single_object_dictset(apr_pool_t *pool, char *type, char *member_name, char *old_member_val, 
+										 char *new_member_val, int id, char *key)
+{
+	int ret = -1;
+	osip_ring_t *val_ring = NULL;
+	osip_ring_iterator_t *it = NULL;
+	void *obj = NULL;
+	int iCount = 0;
+	char *member = NULL;
+
+	member = apr_psprintf(pool, "%s:%s:%s", type, member_name, old_member_val);
+	if(0 != redis_operating_sismember(pool, __strIP, __port, __timeout, key, member))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != redis_operating_srem(pool, __strIP, __port, __timeout, key, NULL, member))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != __redis_update_single_object_memberset(pool, type, member_name, old_member_val, new_member_val, id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	member = apr_psprintf(pool, "%s:%s:%s", type, member_name, new_member_val);
+	if(0 != redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, member))
+	{
+		ret = -1;
+		goto END;
+	}
+	
+	ret = 0;
+END:
+	return ret;
+}
+
+int __redis_update_single_object_memberset(apr_pool_t *pool, char *type, char *member_name, 
+										   char *old_member_val, char *new_member_val, int id)
+{
+	int ret = -1;
+	char *key = NULL;
+
+	key = apr_psprintf(pool, "%s:%s:%s", type, member_name, old_member_val);
+	if(0 != __redis_del_single_object_memberset(pool, key, id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	key = apr_psprintf(pool, "%s:%s:%s", type, member_name, new_member_val);
+	if(0 != redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, apr_psprintf(pool, "%d", id)))
+	{
+		ret = -1;
+		goto END;
+	}
+	ret = 0;
+
+END:
+	return ret;
+}
+
+int redis_update_single_object_timerheap(apr_pool_t *pool, char *key, char *type, int id, apr_time_t new_time)
+{
+	int ret = -1;
+	char *val = NULL;
+	val = apr_psprintf(pool, "%ld %s:%s", new_time, type, id);
+
+	if(0 != redis_operating_zadd(pool, __strIP, __port, __timeout, key, NULL, val))
+	{
+		ret = -1;
+		goto END;
+	}
+	ret = 0;
+
+END:
+	return ret;
+}
+
+int redis_generate_string_member(apr_pool_t *pool, redis_operating_t* operating, char *fmt, 
+								 char *name, char *value, int iszindices)
+{
+	int ret = -1;
+	char *hash_val = NULL;
+
+	hash_val = apr_psprintf(pool, "%s %s", name, value);
+
+	if(0 != __redis_set_class_num(pool, hash_val, operating->type, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+	
+	if(0 != __redis_set_class_memberset(pool, operating->type, name, value, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 == iszindices)
+	{
+		if(0 != __redis_set_class_indices(pool, operating->type, name, value, operating->id))
+		{
+			ret = -1;
+			goto END;
+		}
+	}
+	else
+	{
+		if(0 != __redis_set_class_zindices(pool, operating->type, name, value, operating->id))
+		{
+			ret = -1;
+			goto END;
+		}
+	}
+
+	ret = 0;
+END:
+	return ret;
+}
+
+int redis_generate_timer_member(apr_pool_t *pool, redis_operating_t* operating, 
+								char *timeheap, char *name, apr_time_t value, int iszindices)
+{
+	int ret = -1;
+	char *tmp = NULL;
+
+	tmp = apr_psprintf(pool, "%s %ld", name, value);
+	if(0 != __redis_set_class_num(pool, tmp, operating->type, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	tmp = apr_psprintf(pool, "%s:%s", operating->type, operating->id);
+	if(0 != __redis_set_class_timerheap(pool, timeheap, tmp, value))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	tmp = apr_psprintf(pool, "%ld", value);
+	if(0 != __redis_set_class_memberset(pool, operating->type, name, tmp, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 == iszindices)
+	{
+		if(0 != __redis_set_class_indices(pool, operating->type, name, tmp, operating->id))
+		{
+			ret = -1;
+			goto END;
+		}
+	}
+	else
+	{
+		if(0 != __redis_set_class_zindices(pool, operating->type, name, tmp, operating->id))
+		{
+			ret = -1;
+			goto END;
+		}
+	}
+
+	ret = 0;
+END:
+	return ret;
+}
+
+int redis_generate_reference_member(apr_pool_t *pool, redis_operating_t* operating, 
+									char *type, char *name, void *value, func_call_class func)
+{
+	int ret = -1;
+	char *tmp = NULL;
+
+	int sub_id = func(pool, type, value);
+
+	tmp = apr_psprintf(pool, "%s %s:%d", name, type, sub_id);
+	if(0 != __redis_set_class_num(pool, tmp, operating->type, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	tmp = apr_psprintf(pool, "%s:%d", type, sub_id);
+	if(0 != __redis_set_class_memberset(pool, operating->type, name, tmp, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != __redis_set_class_indices(pool, operating->type, name, tmp, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	ret = 0;
+END:
+	return ret;
+}
+
+int redis_generate_list_member(apr_pool_t *pool, redis_operating_t* operating, 
+							   char *type, char *name, void *value, func_call_class func)
+{
+	int ret = -1;
+	char *tmp = NULL;
+	int sub_id = -1;
+
+	if(type)
+	{
+		sub_id = func(pool, type, value);
+		tmp = apr_psprintf(pool, "%s %s:%d", name, type, sub_id);
+	}
+	else
+	{
+		tmp = (char *)value;
+		tmp = apr_psprintf(pool, "%s %s", name, tmp);
+	}
+
+	if(0 != __redis_set_class_num(pool, tmp, operating->type, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(type)
+	{
+		tmp = apr_psprintf(pool, "%s:%d", type, sub_id);
+	}
+	else
+	{
+		tmp = (char *)value;
+	}
+
+	if(0 != __redis_set_class_list(pool, operating->type, name, tmp, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != __redis_set_class_memberset(pool, operating->type, name, tmp, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != __redis_set_class_indices(pool, operating->type, name, tmp, operating->id))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	ret = 0;
+END:
+	return ret;
+
+}
+
+int func_call_yaproxy_lock(apr_pool_t *pool, char *type, void *obj)
+{
+	return -1;
 }
