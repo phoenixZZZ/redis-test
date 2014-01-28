@@ -35,8 +35,10 @@ typedef struct yaproxy_lock
 
 typedef struct redis_operating
 {
+	apr_pool_t *pool;
 	int id;
 	char* type;
+	char *key;
 	redisContext* connect;
 }redis_operating_t;
 
@@ -140,5 +142,9 @@ int __redis_update_single_object_memberset(apr_pool_t *pool, char *type, char *m
 										   char *old_member_val, char *new_member_val, int id);
 
 int redis_update_single_object_timerheap(apr_pool_t *pool, char *key, char *type, int id, apr_time_t new_time);
+
+int __cleanup_redis_operating(void *ctx);
+
+redis_operating_t *redis_operating_create(apr_pool_t *pool, char *type);
 
 #endif
