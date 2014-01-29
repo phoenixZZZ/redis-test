@@ -64,8 +64,7 @@ int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, const struc
 
 int redis_operating_hmset(apr_pool_t *pool, const char *ip, int port, const struct timeval tv, char *key, apr_hash_t *hash, char *str_val);
 
-int redis_operating_hget(apr_pool_t *pool, const char *ip, int port, const struct timeval tv, char *key, 
-						 char *field, char **value);
+int redis_operating_hget(apr_pool_t *pool, redis_operating_t *handle, char *key, char *field, char **value);
 
 int redis_operating_hmget(apr_pool_t *pool, const char *ip, int port, 
 						  struct timeval tv,char *key,  osip_ring_t *key_ring, osip_ring_t **val_ring);
@@ -75,17 +74,19 @@ int redis_operating_hgetall(apr_pool_t *pool, const char *ip, int port,
 
 int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val);
 
-int redis_operating_srem(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val);
+int redis_operating_srem(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t *ring, char *str_val);
 
 int redis_operating_sinter(apr_pool_t *pool, const char *ip, int port, 
 						   struct timeval tv, osip_ring_t *key_ring, osip_ring_t **val_ring);
 
-int redis_operating_zadd(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val);
+int redis_operating_sismember(apr_pool_t *pool, redis_operating_t *handle, char *key, char *val);
 
-int redis_operating_zrem(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val);
+int redis_operating_zadd(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t *ring, char *str_val);
+
+int redis_operating_zrem(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t *ring, char *str_val);
 
 //int redis_operating_del(apr_pool_t *pool, const char *ip, int port, const struct timeval tv, osip_ring_t *key_ring);
-int redis_operating_del(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key);
+int redis_operating_del(apr_pool_t *pool, redis_operating_t *handle, char *key);
 
 int redis_operating_incr(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, int increment);
 
@@ -104,6 +105,9 @@ int redis_operating_exists(apr_pool_t *pool, const char *ip, int port, struct ti
 
 //此处之后的函数，考虑在以后分成独立的h文件：redis_struct.h
 typedef int (*func_call_class)(apr_pool_t *, char *, void *);
+typedef void* (*func_call_get)(apr_pool_t *, char *);
+typedef void* (*func_call_del)(apr_pool_t *, char *);
+typedef void* (*func_call_update)(apr_pool_t *, char *, void *);
 
 int __redis_update_class_id(apr_pool_t *pool, char *type);
 
@@ -125,26 +129,34 @@ int __redis_set_class_zindices(apr_pool_t *pool, char *type, char *member_name, 
 
 int redis_del_objects_bymember(apr_pool_t *pool, char *type, char *member, ...);
 
-int redis_del_single_object_byid(apr_pool_t *pool, char *type, int id);
+int redis_del_single_object_byid(apr_pool_t *pool, redis_operating_t *handle, 
+								 char *member_name, char *member_val);
 
-int __redis_del_single_object_dictset(apr_pool_t *pool, char *type, int id, char *key);
+int __redis_del_single_object_dictset(apr_pool_t *pool, redis_operating_t *handle, 
+									  char *key, char *member_name, char *member_val);
 
-int __redis_del_single_object_memberset(apr_pool_t *pool, char *key, int id);
+int __redis_del_single_object_memberset(apr_pool_t *pool, redis_operating_t *handle, char *key);
 
-int __redis_del_single_object_timerheap(apr_pool_t *pool, char *key, char *type, int id);
+int __redis_del_single_object_timerheap(apr_pool_t *pool, redis_operating_t *handle, char *key);
 
-int redis_update_single_object_byid(apr_pool_t *pool, char *type, int id, char member_name, char *new_member_val);
+int redis_update_single_object_byid(apr_pool_t *pool, redis_operating_t *handle, char member_name, char *new_member_val);
 
-int __redis_update_single_object_dictset(apr_pool_t *pool, char *type, char *member_name, char *old_member_val, 
-										 char *new_member_val, int id, char *key);
+int __redis_update_single_object_dictset(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *old_member_val, 
+										 char *new_member_val, char *key);
 
-int __redis_update_single_object_memberset(apr_pool_t *pool, char *type, char *member_name, 
-										   char *old_member_val, char *new_member_val, int id);
+int __redis_update_single_object_memberset(apr_pool_t *pool, redis_operating_t *handle, char *member_name, 
+										   char *old_member_val, char *new_member_val);
 
-int redis_update_single_object_timerheap(apr_pool_t *pool, char *key, char *type, int id, apr_time_t new_time);
+int redis_update_single_object_timerheap(apr_pool_t *pool, redis_operating_t *handle, char *key, apr_time_t new_time);
 
 int __cleanup_redis_operating(void *ctx);
 
-redis_operating_t *redis_operating_create(apr_pool_t *pool, char *type);
+redis_operating_t *redis_operating_create(apr_pool_t *pool, char *type, int id, int isconnect);
+
+redis_operating_t *redis_operating_nomutli_init(apr_pool_t *pool, char *type, int id);
+
+redis_operating_t *redis_operating_nowatch_init(apr_pool_t *pool, char *type, int id);
+
+redis_operating_t *redis_operating_watch_init(apr_pool_t *pool, char *type, int id, char *watch);
 
 #endif
