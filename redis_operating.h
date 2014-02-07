@@ -60,7 +60,7 @@ int __redis_operating_execution_multi(apr_pool_t *pool, redisContext* gClient, o
 
 apr_hash_t* __redis_operating_reader_multi(redisContext* gClient, apr_pool_t *pool, osip_ring_t* ring);
 
-int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, const struct timeval tv, char *key, char *field, char *value);
+int redis_operating_hset(apr_pool_t *pool, redis_operating_t *handle, char *key, char *field, char *value);
 
 int redis_operating_hmset(apr_pool_t *pool, const char *ip, int port, const struct timeval tv, char *key, apr_hash_t *hash, char *str_val);
 
@@ -72,7 +72,7 @@ int redis_operating_hmget(apr_pool_t *pool, const char *ip, int port,
 int redis_operating_hgetall(apr_pool_t *pool, const char *ip, int port, 
 							struct timeval tv,char *key, osip_ring_t **val_ring);
 
-int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val);
+int redis_operating_sadd(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t *ring, char *str_val);
 
 int redis_operating_srem(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t *ring, char *str_val);
 
@@ -113,19 +113,19 @@ int __redis_update_class_id(apr_pool_t *pool, char *type);
 
 osip_ring_t* redis_get_class_id(apr_pool_t *pool, char *type, char *member, ...);
 
-int __redis_set_class_num(apr_pool_t *pool, char *value, char *type, int id);
+int __redis_set_class_num(apr_pool_t *pool, redis_operating_t *handle, char *field, char *value);
 
-int __redis_set_class_all(apr_pool_t *pool, char *type, int id);
+int __redis_set_class_all(apr_pool_t *pool, redis_operating_t *handle);
 
-int __redis_set_class_timerheap(apr_pool_t *pool, char *type, char *key, apr_time_t timer);
+int __redis_set_class_timerheap(apr_pool_t *pool, redis_operating_t *handle, char *key, char *val, apr_time_t timer);
 
 int redis_get_class_timerheap(apr_pool_t *pool, char *type, apr_time_t timer, osip_ring_t **result);
 
-int __redis_set_class_memberset(apr_pool_t *pool, char *type, char *member_name, char *member_val, int class_id);
+int __redis_set_class_memberset(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val);
 
-int __redis_set_class_indices(apr_pool_t *pool, char *type, char *member_name, char *member_val, int class_id);
+int __redis_set_class_indices(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val);
 
-int __redis_set_class_zindices(apr_pool_t *pool, char *type, char *member_name, char *member_val, int class_id);
+int __redis_set_class_zindices(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val);
 
 int redis_del_objects_bymember(apr_pool_t *pool, char *type, char *member, ...);
 

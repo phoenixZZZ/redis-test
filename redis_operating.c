@@ -327,7 +327,7 @@ END:
 	return hash;
 }
 
-int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, char *field, char *value)
+int redis_operating_hset(apr_pool_t *pool, redis_operating_t *handle, char *key, char *field, char *value)
 {
 	char *strcmd = NULL;
 	int ret = -1;
@@ -342,16 +342,9 @@ int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, struct time
 	}
 
 	strcmd = apr_psprintf(pool, "HSET %s %s %s", key, field, value);
-	gClient = __redis_operating_connect(ip, port, &tv);
-	if(NULL == gClient)
-	{
-		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
-		ret = -1;
-		goto END;
-	}
 	
 	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
-	ret = __redis_operating_execution(gClient, strcmd, pool, reply_result);
+	ret = __redis_operating_execution(handle->connect, strcmd, pool, reply_result);
 	if(ret != 0)
 	{
 		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
@@ -361,10 +354,6 @@ int redis_operating_hset(apr_pool_t *pool, const char *ip, int port, struct time
 	ret = 0;
 
 END:
-    if (NULL != gClient)
-    {
-        redisFree(gClient);
-	}
 	return ret;
 
 }
@@ -450,6 +439,7 @@ int redis_operating_hget(apr_pool_t *pool, redis_operating_t *handle, char *key,
 	char *strcmd = NULL;
 	int ret = -1;
 	redis_reply_result_t *reply_result = NULL;
+	redis_operating_t *sub_handle = redis_operating_nomutli_init(pool, handle->type, handle->id);
 
 	if(NULL == key || NULL == pool)
 	{
@@ -460,7 +450,7 @@ int redis_operating_hget(apr_pool_t *pool, redis_operating_t *handle, char *key,
 
 	strcmd = apr_psprintf(pool, "HGET %s %s", key, field);
 	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
-	ret = __redis_operating_execution(handle->connect, strcmd, pool, reply_result);
+	ret = __redis_operating_execution(sub_handle->connect, strcmd, pool, reply_result);
 	if(ret != 0)
 	{
 		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
@@ -472,9 +462,9 @@ int redis_operating_hget(apr_pool_t *pool, redis_operating_t *handle, char *key,
 	ret = 0;
 
 END:
-    if (0 != ret)
+    if (sub_handle)
     {
-        apr_pool_cleanup_run(handle->pool, handle, __cleanup_redis_operating);
+        apr_pool_cleanup_run(sub_handle->pool, sub_handle, __cleanup_redis_operating);
 	}
 	return ret;
 
@@ -952,7 +942,7 @@ END:
 	return ret;
 }
 
-int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t *ring, char *str_val)
+int redis_operating_sadd(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t *ring, char *str_val)
 {
 	//char *strcmd = NULL;
 	int ret = -1;
@@ -993,18 +983,8 @@ int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct time
 		strcmd->string = apr_pstrcat(pool, strcmd->string, " ", str_val, " ", NULL);
 	}
 
-	redisContext* gClient = NULL;
-	gClient = __redis_operating_connect(ip, port, &tv);
-	if(NULL == gClient)
-	{
-		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
-		ret = -1;
-		goto END;
-	}
-	
-
 	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
-	ret = __redis_operating_execution(gClient, strcmd->string, pool, reply_result);
+	ret = __redis_operating_execution(handle->connect, strcmd->string, pool, reply_result);
 	if(ret != 0)
 	{
 		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
@@ -1017,10 +997,6 @@ int redis_operating_sadd(apr_pool_t *pool, const char *ip, int port, struct time
 		ret = -1;
 
 END:
-    if (NULL != gClient)
-    {
-        redisFree(gClient);
-	}
 	return ret;
 }
 
@@ -1134,8 +1110,7 @@ END:
 	return ret;
 }
 
-int redis_operating_smembers(apr_pool_t *pool, const char *ip, int port, 
-							struct timeval tv, char *key, osip_ring_t **val_ring)
+int redis_operating_smembers(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t **val_ring)
 {
 	//char *strcmd = NULL;
 	int ret = -1;
@@ -1149,6 +1124,8 @@ int redis_operating_smembers(apr_pool_t *pool, const char *ip, int port,
 	apr_pool_t *subpool2 = NULL;
 	hash_string_t *strcmd = apr_pcalloc(pool, sizeof(hash_string_t));
 
+	redis_operating_t* sub_handle = redis_operating_nomutli_init(pool, handle->type, handle->id);
+
 	apr_pool_create(&subpool1, pool);
 	strcmd->pool = subpool1;
 
@@ -1161,16 +1138,7 @@ int redis_operating_smembers(apr_pool_t *pool, const char *ip, int port,
 
 	strcmd->string = apr_psprintf(subpool1, "SMEMBERS %s", key);
 
-	redisContext* gClient = NULL;
-	gClient = __redis_operating_connect(ip, port, &tv);
-	if(NULL == gClient)
-	{
-		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
-		ret = -1;
-		goto END;
-	}
-
-	tmp_ring = __redis_operating_reader(pool, gClient, strcmd->string);
+	tmp_ring = __redis_operating_reader(pool, sub_handle->connect, strcmd->string);
 	if(NULL == tmp_ring)
 	{
 		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
@@ -1182,9 +1150,9 @@ int redis_operating_smembers(apr_pool_t *pool, const char *ip, int port,
 	ret = 0;
 
 END:
-    if (NULL != gClient)
-    {
-        redisFree(gClient);
+    if(sub_handle)
+	{
+		apr_pool_cleanup_run(sub_handle->pool, sub_handle, __cleanup_redis_operating);
 	}
 	apr_pool_destroy(strcmd->pool);
 	return ret;
@@ -1863,12 +1831,12 @@ END:
 	return ret_ring;
 }
 
-int __redis_set_class_num(apr_pool_t *pool, char *value, char *type, int id)
+int __redis_set_class_num(apr_pool_t *pool, redis_operating_t *handle, char *field, char *value)
 {
 	int ret = -1;
 	char *key = NULL;
 
-	if(NULL == type || NULL == value || id <=0)
+	if(NULL == field || NULL == value || NULL == handle)
 	{
 		ret = -1;
 		goto END;
@@ -1876,8 +1844,8 @@ int __redis_set_class_num(apr_pool_t *pool, char *value, char *type, int id)
 
 	if(value)
 	{
-		key = apr_psprintf(pool, "%s:%d", type, id);
-		if(redis_operating_hset(pool, __strIP, __port, __timeout, key, NULL, value) != -1)
+		key = apr_psprintf(pool, "%s:%d", handle->type, handle->id);
+		if(redis_operating_hset(pool, handle, key, field, value) != -1)
 		{
 			ret = 0;
 			goto END;
@@ -1888,21 +1856,21 @@ END:
 	return ret;
 }
 
-int __redis_set_class_all(apr_pool_t *pool, char *type, int id)
+int __redis_set_class_all(apr_pool_t *pool, redis_operating_t *handle)
 {
 	int ret = -1;
 	char *key = NULL;
 	char *val = NULL;
 
-	if(NULL == pool || NULL == type || id <=0)
+	if(NULL == pool || NULL == handle)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	key = apr_psprintf(pool, "%s:all", type);
-	val = apr_psprintf(pool, "%s:%d", type, id);
-	redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, val);
+	key = apr_psprintf(pool, "%s:all", handle->type);
+	val = apr_psprintf(pool, "%s:%d", handle->type, handle->id);
+	redis_operating_sadd(pool, handle, key, NULL, val);
 
 	ret = 0;
 END:
@@ -1910,16 +1878,10 @@ END:
 }
 
 
-int __redis_set_class_timerheap(apr_pool_t *pool, char *key, char *val, apr_time_t timer)
+int __redis_set_class_timerheap(apr_pool_t *pool, redis_operating_t *handle, char *key, char *val, apr_time_t timer)
 {
 	int ret = -1;
 	char *tmp = NULL;
-	char *type = NULL;
-	char *id = NULL;
-	char *p = NULL;
-	
-	type=  apr_strtok(key, ":", &p);
-	id = apr_strtok(NULL, ":" ,&p);
 
 	if(NULL == pool || NULL == key || NULL == val)
 	{
@@ -1927,12 +1889,10 @@ int __redis_set_class_timerheap(apr_pool_t *pool, char *key, char *val, apr_time
 		goto END;
 	}
 
-	redis_operating_t *handle = redis_operating_nowatch_init(pool, type, id);
-
+	//redis_operating_t *handle = redis_operating_nowatch_init(pool, type, id);
 	tmp = apr_psprintf(pool, "%ld %s", timer, val);
 	redis_operating_zadd(pool, handle, key, NULL, tmp);
-
-	redis_operating_exec(handle->pool, handle);
+	//redis_operating_exec(handle->pool, handle);
 	ret = 0;
 
 END:
@@ -1988,21 +1948,21 @@ END:
 	return ret;
 }
 
-int __redis_set_class_list(apr_pool_t *pool, char *type, char *member_name, char *member_val, int id)
+int __redis_set_class_list(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val)
 {
 	int ret = -1;
 	char *key = NULL;
 	char *val = NULL;
 
-	if(NULL == pool || NULL == type || id <=0)
+	if(NULL == pool || NULL == handle)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	key = apr_psprintf(pool, "%s:%s:%s", type, id, member_name);
+	key = apr_psprintf(pool, "%s:%s:%s", handle->type, handle->id, member_name);
 	val = apr_psprintf(pool, "%d", member_val);
-	redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, val);
+	redis_operating_sadd(pool, handle, key, NULL, val);
 	
 	ret = 0;
 END:
@@ -2022,7 +1982,7 @@ int __redis_get_class_list(apr_pool_t *pool, redis_operating_t *handle, char *ke
 	}
 	
 	key = apr_psprintf(pool, "%s:%s", key, member_name);
-	if(0 != redis_operating_smembers(pool, __strIP, __port, __timeout, key, ret_ring))
+	if(0 != redis_operating_smembers(pool, handle, key, ret_ring))
 	{
 		ret = -1;
 		goto END;
@@ -2033,64 +1993,64 @@ END:
 	return ret;
 }
 
-int __redis_set_class_memberset(apr_pool_t *pool, char *type, char *member_name, char *member_val, int id)
+int __redis_set_class_memberset(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val)
 {
 	int ret = -1;
 	char *key = NULL;
 	char *val = NULL;
 
-	if(NULL == pool || NULL == type || id <=0)
+	if(NULL == pool || NULL == member_name || NULL == member_val)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	key = apr_psprintf(pool, "%s:%s:%s", type, member_name, member_val);
-	val = apr_psprintf(pool, "%d", id);
-	redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, val);
+	key = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, member_val);
+	val = apr_psprintf(pool, "%d", handle->id);
+	redis_operating_sadd(pool, handle, key, NULL, val);
 	
 	ret = 0;
 END:
 	return ret;
 }
 
-int __redis_set_class_indices(apr_pool_t *pool, char *type, char *member_name, char *member_val, int id)
+int __redis_set_class_indices(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val)
 {
 	int ret = -1;
 	char *key = NULL;
 	char *val = NULL;
 
-	if(NULL == pool || NULL == type || id <=0)
+	if(NULL == pool || NULL == member_name || NULL == member_val)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	key = apr_psprintf(pool, "%s:%d:_indices", type, id);
-	val = apr_psprintf(pool, "%s:%s:%s", type, member_name, member_val);
-	redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, val);
+	key = apr_psprintf(pool, "%s:%d:_indices", handle->type, handle->id);
+	val = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, member_val);
+	redis_operating_sadd(pool, handle, key, NULL, val);
 	
 	ret = 0;
 END:
 	return ret;
 }
 
-int __redis_set_class_zindices(apr_pool_t *pool, char *type, char *member_name, char *member_val, int id)
+int __redis_set_class_zindices(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val)
 {
 	int ret = -1;
 	char *key = NULL;
 	char *val = NULL;
 
-	if(NULL == pool || NULL == type || id <=0)
+	if(NULL == pool || NULL == member_name || NULL == member_val)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	key = apr_psprintf(pool, "%s:%d:_zindices", type, id);
-	val = apr_psprintf(pool, "%s:%s:%s", type, member_name, member_val);
-	redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, val);
-	
+	key = apr_psprintf(pool, "%s:%d:_zindices", handle->type, handle->id);
+	val = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, member_val);
+	redis_operating_sadd(pool, handle, key, NULL, val);
+
 	ret = 0;
 END:
 	return ret;
@@ -2315,7 +2275,7 @@ int redis_update_single_object_byid(apr_pool_t *pool, redis_operating_t *handle,
 		goto END;
 	}
 
-	if(0 != redis_operating_hset(pool, __strIP, __port, __timeout, key, member_name, new_member_val))
+	if(0 != redis_operating_hset(pool, handle, key, member_name, new_member_val))
 	{
 		ret = -1;
 		goto END;
@@ -2356,7 +2316,7 @@ int __redis_update_single_object_dictset(apr_pool_t *pool, redis_operating_t *ha
 	}
 
 	member = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, new_member_val);
-	if(0 != redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, member))
+	if(0 != redis_operating_sadd(pool, handle, key, NULL, member))
 	{
 		ret = -1;
 		goto END;
@@ -2381,7 +2341,7 @@ int __redis_update_single_object_memberset(apr_pool_t *pool, redis_operating_t *
 	}
 
 	key = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, new_member_val);
-	if(0 != redis_operating_sadd(pool, __strIP, __port, __timeout, key, NULL, handle->id))
+	if(0 != redis_operating_sadd(pool, handle, key, NULL, handle->id))
 	{
 		ret = -1;
 		goto END;
@@ -2409,15 +2369,13 @@ END:
 	return ret;
 }
 
-int redis_generate_string_member(apr_pool_t *pool, redis_operating_t* operating, 
+int redis_generate_string_member(apr_pool_t *pool, redis_operating_t* handle, 
 								 char *name, char *value, int iszindices, int isrelation)
 {
 	int ret = -1;
 	char *hash_val = NULL;
 
-	hash_val = apr_psprintf(pool, "%s %s", name, value);
-
-	if(0 != __redis_set_class_num(pool, hash_val, operating->type, operating->id))
+	if(0 != __redis_set_class_num(pool, handle, name, value))
 	{
 		ret = -1;
 		goto END;
@@ -2425,7 +2383,7 @@ int redis_generate_string_member(apr_pool_t *pool, redis_operating_t* operating,
 	
 	if(0 != isrelation)
 	{
-		if(0 != __redis_set_class_memberset(pool, operating->type, name, value, operating->id))
+		if(0 != __redis_set_class_memberset(pool, handle, name, value))
 		{
 			ret = -1;
 			goto END;
@@ -2433,7 +2391,7 @@ int redis_generate_string_member(apr_pool_t *pool, redis_operating_t* operating,
 	
 		if(0 == iszindices)
 		{
-			if(0 != __redis_set_class_indices(pool, operating->type, name, value, operating->id))
+			if(0 != __redis_set_class_indices(pool, handle, name, value))
 			{
 				ret = -1;
 				goto END;
@@ -2441,7 +2399,7 @@ int redis_generate_string_member(apr_pool_t *pool, redis_operating_t* operating,
 		}
 		else
 		{
-			if(0 != __redis_set_class_zindices(pool, operating->type, name, value, operating->id))
+			if(0 != __redis_set_class_zindices(pool, handle, name, value))
 			{
 				ret = -1;
 				goto END;
@@ -2454,21 +2412,20 @@ END:
 	return ret;
 }
 
-int redis_generate_timer_member(apr_pool_t *pool, redis_operating_t* operating, char *timeheap, 
+int redis_generate_timer_member(apr_pool_t *pool, redis_operating_t* handle, char *timeheap, 
 								char *name, apr_time_t value, int iszindices, int isrelation)
 {
 	int ret = -1;
 	char *tmp = NULL;
 
-	tmp = apr_psprintf(pool, "%s %ld", name, value);
-	if(0 != __redis_set_class_num(pool, tmp, operating->type, operating->id))
+	if(0 != __redis_set_class_num(pool, handle, name, value))
 	{
 		ret = -1;
 		goto END;
 	}
 
-	tmp = apr_psprintf(pool, "%s:%s", operating->type, operating->id);
-	if(0 != __redis_set_class_timerheap(pool, timeheap, tmp, value))
+	tmp = apr_psprintf(pool, "%s:%s", handle->type, handle->id);
+	if(0 != __redis_set_class_timerheap(pool, handle, timeheap, tmp, value))
 	{
 		ret = -1;
 		goto END;
@@ -2477,7 +2434,7 @@ int redis_generate_timer_member(apr_pool_t *pool, redis_operating_t* operating, 
 	if(0 != isrelation)
 	{
 		tmp = apr_psprintf(pool, "%ld", value);
-		if(0 != __redis_set_class_memberset(pool, operating->type, name, tmp, operating->id))
+		if(0 != __redis_set_class_memberset(pool, handle, name, tmp))
 		{
 			ret = -1;
 			goto END;
@@ -2485,7 +2442,7 @@ int redis_generate_timer_member(apr_pool_t *pool, redis_operating_t* operating, 
 
 		if(0 == iszindices)
 		{
-			if(0 != __redis_set_class_indices(pool, operating->type, name, tmp, operating->id))
+			if(0 != __redis_set_class_indices(pool, handle, name, tmp))
 			{
 				ret = -1;
 				goto END;
@@ -2493,7 +2450,7 @@ int redis_generate_timer_member(apr_pool_t *pool, redis_operating_t* operating, 
 		}
 		else
 		{
-			if(0 != __redis_set_class_zindices(pool, operating->type, name, tmp, operating->id))
+			if(0 != __redis_set_class_zindices(pool, handle, name, tmp))
 			{
 				ret = -1;
 				goto END;
@@ -2505,7 +2462,7 @@ END:
 	return ret;
 }
 
-int redis_generate_reference_member(apr_pool_t *pool, redis_operating_t* operating, 
+int redis_generate_reference_member(apr_pool_t *pool, redis_operating_t* handle, 
 									char *type, char *name, void *value, int isrelation, func_call_class func)
 {
 	int ret = -1;
@@ -2513,8 +2470,8 @@ int redis_generate_reference_member(apr_pool_t *pool, redis_operating_t* operati
 
 	int sub_id = func(pool, type, value);
 
-	tmp = apr_psprintf(pool, "%s %s:%d", name, type, sub_id);
-	if(0 != __redis_set_class_num(pool, tmp, operating->type, operating->id))
+	tmp = apr_psprintf(pool, "%s:%d", type, sub_id);
+	if(0 != __redis_set_class_num(pool, handle, name, tmp))
 	{
 		ret = -1;
 		goto END;
@@ -2522,14 +2479,13 @@ int redis_generate_reference_member(apr_pool_t *pool, redis_operating_t* operati
 	
 	if(0 != isrelation)
 	{
-		tmp = apr_psprintf(pool, "%s:%d", type, sub_id);
-		if(0 != __redis_set_class_memberset(pool, operating->type, name, tmp, operating->id))
+		if(0 != __redis_set_class_memberset(pool, handle, name, tmp))
 		{
 			ret = -1;
 			goto END;
 		}
 
-		if(0 != __redis_set_class_indices(pool, operating->type, name, tmp, operating->id))
+		if(0 != __redis_set_class_indices(pool, handle, name, tmp))
 		{
 			ret = -1;
 			goto END;
@@ -2541,7 +2497,7 @@ END:
 	return ret;
 }
 
-int redis_generate_list_member(apr_pool_t *pool, redis_operating_t* operating, 
+int redis_generate_list_member(apr_pool_t *pool, redis_operating_t* handle, 
 							   char *type, char *name, void *value, int isrelation, func_call_class func)
 {
 	int ret = -1;
@@ -2551,15 +2507,14 @@ int redis_generate_list_member(apr_pool_t *pool, redis_operating_t* operating,
 	if(type)
 	{
 		sub_id = func(pool, type, value);
-		tmp = apr_psprintf(pool, "%s %s:%d", name, type, sub_id);
+		tmp = apr_psprintf(pool, "%s:%d", type, sub_id);
 	}
 	else
 	{
 		tmp = (char *)value;
-		tmp = apr_psprintf(pool, "%s %s", name, tmp);
 	}
 
-	if(0 != __redis_set_class_num(pool, tmp, operating->type, operating->id))
+	if(0 != __redis_set_class_num(pool, handle, name, tmp))
 	{
 		ret = -1;
 		goto END;
@@ -2574,7 +2529,7 @@ int redis_generate_list_member(apr_pool_t *pool, redis_operating_t* operating,
 		tmp = (char *)value;
 	}
 
-	if(0 != __redis_set_class_list(pool, operating->type, name, tmp, operating->id))
+	if(0 != __redis_set_class_list(pool, handle, name, tmp))
 	{
 		ret = -1;
 		goto END;
@@ -2582,13 +2537,13 @@ int redis_generate_list_member(apr_pool_t *pool, redis_operating_t* operating,
 
 	if(0 != isrelation)
 	{
-		if(0 != __redis_set_class_memberset(pool, operating->type, name, tmp, operating->id))
+		if(0 != __redis_set_class_memberset(pool, handle, name, tmp))
 		{
 			ret = -1;
 			goto END;
 		}
 
-		if(0 != __redis_set_class_indices(pool, operating->type, name, tmp, operating->id))
+		if(0 != __redis_set_class_indices(pool, handle, name, tmp))
 		{
 			ret = -1;
 			goto END;
@@ -2609,7 +2564,7 @@ void *db_get_value_string_and_time(apr_pool_t *pool, char *key, char *member_nam
 	
 	type=  apr_strtok(key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
-	redis_operating_t *handle = redis_operating_nomutli_init(pool, type, id);
+	redis_operating_t *handle = redis_operating_create(pool, type, id, -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2626,10 +2581,6 @@ void *db_get_value_string_and_time(apr_pool_t *pool, char *key, char *member_nam
 	}
 
 END:
-	if(handle)
-	{
-		apr_pool_cleanup_run(handle->pool, handle, __cleanup_redis_operating);
-	}
 	return result;
 }
 
@@ -2644,7 +2595,7 @@ void *db_get_value_reference(apr_pool_t *pool, char *key, char *member_name, fun
 	
 	type=  apr_strtok(key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
-	redis_operating_t *handle = redis_operating_nomutli_init(pool, type, id);
+	redis_operating_t *handle = redis_operating_create(pool, type, id, -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2662,10 +2613,6 @@ void *db_get_value_reference(apr_pool_t *pool, char *key, char *member_name, fun
 
 	result = func(pool, reference_obj);
 END:
-	if(handle)
-	{
-		apr_pool_cleanup_run(handle->pool, handle, __cleanup_redis_operating);
-	}
 	return result;
 }
 
@@ -2713,10 +2660,6 @@ void *db_get_value_list(apr_pool_t *pool, char *key, char *member_name, func_cal
 	result = ret_ring;
 
 END:
-	if(handle)
-	{
-		apr_pool_cleanup_run(handle->pool, handle, __cleanup_redis_operating);
-	}
 	if(val_ring)
 	{
 		obj = NULL;
@@ -2743,7 +2686,7 @@ int del_delete_string_member(apr_pool_t *pool, char *key, char *member_name)
 	type=  apr_strtok(key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, 0);
+	handle = redis_operating_create(pool, type, id, -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2802,7 +2745,7 @@ int db_delete_timer_member(apr_pool_t *pool, char *key, char *time_key, char *me
 	type=  apr_strtok(key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, 0);
+	handle = redis_operating_create(pool, type, id, -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2869,7 +2812,7 @@ int db_delete_reference_member(apr_pool_t *pool, char *key, char *member_name, f
 	type=  apr_strtok(key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, 0);
+	handle = redis_operating_create(pool, type, id, -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2913,6 +2856,7 @@ int db_delete_reference_member(apr_pool_t *pool, char *key, char *member_name, f
 		ret = -1;
 		goto END;
 	}
+	handle = NULL;
 	ret = 0;
 
 END:
@@ -2935,7 +2879,7 @@ int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, void *
 	type=  apr_strtok(key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, 0);
+	handle = redis_operating_create(pool, type, id, -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -3307,21 +3251,26 @@ redis_operating_t *redis_operating_create(apr_pool_t *pool, char *type, int id, 
 
 	result->key = apr_psprintf(pool, "%s:%d", type, id);
 
-	if(0 != isconnect)
+	if(-1 != isconnect)
 	{
 		result->connect = __redis_operating_connect(__strIP, __port, &__timeout);
 		apr_pool_cleanup_register(pool, result, __cleanup_redis_operating, apr_pool_cleanup_null);
 	}
+	else
+	{
+		result->connect = NULL;
+	}
+	return result;
 }
 
 int __cleanup_redis_operating(void *ctx)
 {
 	redis_operating_t *handle = ctx;
 
-	if(handle)
+	if(handle->connect)
 	{
-		redisFree(handle);
-		handle = NULL;
+		redisFree(handle->connect);
+		handle->connect = NULL;
 	}
 
 	return 0;
