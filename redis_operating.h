@@ -24,6 +24,23 @@ typedef struct hash_string
 	char *string;
 }hash_string_t;
 
+typedef struct test_complex_1
+{
+	apr_pool_t *pool;
+	int count_1;
+	char *str_1;
+	apr_time_t timer_1;
+	osip_ring_t *ring_complex_2;
+}test_complex_1_t;
+
+typedef struct test_complex_2
+{
+	apr_pool_t *pool;
+	int count_2;
+	char *str_2;
+	apr_time_t timer_2;
+}test_complex_2_t;
+
 typedef struct yaproxy_lock
 {
     apr_pool_t *pool;
@@ -31,6 +48,7 @@ typedef struct yaproxy_lock
 	char *clientID;
 	int level;
 	apr_time_t timer;
+	test_complex_1_t *sub_obj;
 }yaproxy_lock_t;
 
 typedef struct redis_operating
@@ -88,7 +106,7 @@ int redis_operating_zrem(apr_pool_t *pool, redis_operating_t *handle, char *key,
 //int redis_operating_del(apr_pool_t *pool, const char *ip, int port, const struct timeval tv, osip_ring_t *key_ring);
 int redis_operating_del(apr_pool_t *pool, redis_operating_t *handle, char *key);
 
-int redis_operating_incr(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, int increment);
+int redis_operating_incr(apr_pool_t *pool, redisContext* gClient, char *key, int increment);
 
 int redis_operating_set(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, char *value, int ex_flag);
 
@@ -102,6 +120,8 @@ int redis_operating_mget(apr_pool_t *pool, const char *ip, int port,
 int redis_operating_keys(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, osip_ring_t **val_ring);
 
 int redis_operating_exists(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key);
+
+int redis_operating_zrangbyscore(apr_pool_t *pool, redis_operating_t *handle, char *key, char *min, char *max, osip_ring_t **val_ring);
 
 //此处之后的函数，考虑在以后分成独立的h文件：redis_struct.h
 typedef int (*func_call_class)(apr_pool_t *, char *, void *);
@@ -119,7 +139,7 @@ int __redis_set_class_all(apr_pool_t *pool, redis_operating_t *handle);
 
 int __redis_set_class_timerheap(apr_pool_t *pool, redis_operating_t *handle, char *key, char *val, apr_time_t timer);
 
-int redis_get_class_timerheap(apr_pool_t *pool, char *type, apr_time_t timer, osip_ring_t **result);
+int redis_get_class_timerheap(apr_pool_t *pool, char *key, apr_time_t timer, osip_ring_t **result);
 
 int __redis_set_class_memberset(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val);
 
@@ -158,5 +178,17 @@ redis_operating_t *redis_operating_nomutli_init(apr_pool_t *pool, char *type, in
 redis_operating_t *redis_operating_nowatch_init(apr_pool_t *pool, char *type, int id);
 
 redis_operating_t *redis_operating_watch_init(apr_pool_t *pool, char *type, int id, char *watch);
+
+int db_generate_string_member(apr_pool_t *pool, redis_operating_t* handle, 
+							  char *name, char *value, int iszindices, int isrelation);
+
+int db_generate_timer_member(apr_pool_t *pool, redis_operating_t* handle, char *timeheap, 
+							 char *name, apr_time_t value, int iszindices, int isrelation);
+
+int db_generate_reference_member(apr_pool_t *pool, redis_operating_t* handle, 
+								 char *type, char *name, void *value, int isrelation, func_call_class func);
+
+int db_generate_list_member(apr_pool_t *pool, redis_operating_t* handle, 
+							char *type, char *name, void *value, int isrelation, func_call_class func);
 
 #endif
