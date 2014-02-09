@@ -181,7 +181,8 @@ int main()
 	redis_operating_del(pool, (char*)"127.0.0.1", 6379, timeout, key_ring);*/
 
 	//test_thread_pool();
-	test_proxy_lock();
+	test_proxy_lock_set();
+	test_proxy_lock_get();
 	//test_timeheap();
 	return;
 }
@@ -328,7 +329,7 @@ apr_time_t yasips_misc_str_totime_byformat(apr_time_t now_time)
 }
 
 //bussiness
-int func_call_test_complex2(apr_pool_t *pool, char *type, void *obj)
+int func_call_test_complex2_set(apr_pool_t *pool, char *type, void *obj)
 {
 	int ret = -1;
 	test_complex_2_t *object = (test_complex_2_t *)obj;
@@ -344,7 +345,7 @@ END:
 	return ret;
 }
 
-int func_call_test_complex1(apr_pool_t *pool, char *type, void *obj)
+int func_call_test_complex1_set(apr_pool_t *pool, char *type, void *obj)
 {
 	int ret = -1;
 	osip_ring_iterator_t *it = NULL;
@@ -359,7 +360,7 @@ int func_call_test_complex1(apr_pool_t *pool, char *type, void *obj)
 	osip_ring_create_iterator(pool, &it);
 	for(sub_obj = osip_ring_get_first(object->ring_complex_2, it); sub_obj; sub_obj = osip_ring_get_next(it))
 	{
-	   db_generate_list_member(pool, handle, "test_complex_2_t", "ring_complex_2", sub_obj, 1, func_call_test_complex2);
+		db_generate_list_member(pool, handle, "test_complex_2_t", "ring_complex_2", sub_obj, 1, func_call_test_complex2_set);
 	}
 	osip_ring_destroy_iterator(it);
 
@@ -369,7 +370,7 @@ END:
 	return ret;
 }
 
-int func_call_yaproxy_lock(apr_pool_t *pool, char *type, void *obj)
+int func_call_yaproxy_lock_set(apr_pool_t *pool, char *type, void *obj)
 {
 	int ret = -1;
 	yaproxy_lock_t *object = (yaproxy_lock_t *)obj;
@@ -379,7 +380,7 @@ int func_call_yaproxy_lock(apr_pool_t *pool, char *type, void *obj)
 	db_generate_string_member(pool, handle, "clientID", object->clientID, 0, 1);
 	db_generate_string_member(pool, handle, "level", apr_psprintf(pool, "%d", object->level), 0, 1);
 	db_generate_timer_member(pool, handle, "test_timeheap", "timer", object->timer, 1, 0);
-	db_generate_reference_member(pool, handle, "test_complex_1_t", "sub_obj", object->sub_obj, 1, func_call_test_complex1);
+	db_generate_reference_member(pool, handle, "test_complex_1_t", "sub_obj", object->sub_obj, 1, func_call_test_complex1_set);
 
 	redis_operating_exec(handle->pool, handle);
 	ret = handle->id;
@@ -427,12 +428,12 @@ test_complex_2_t* test_complex_2_create(apr_pool_t *pool, int count_2, char *str
 	return result;
 }
 
-int test_proxy_lock()
+int test_proxy_lock_set()
 {
 	apr_pool_t *pool = NULL;
 	apr_pool_create(&pool, NULL);
 	yaproxy_lock_t *obj = apr_pcalloc(pool, sizeof(yaproxy_lock_t));
-
+	
 	obj->pool = pool;
 	obj->clientID = apr_pstrdup(pool, "12345678901234567891");
 	obj->ipcGbID = apr_pstrdup(pool, "12345678901234567892");
@@ -448,9 +449,148 @@ int test_proxy_lock()
 	osip_ring_add(obj->sub_obj->ring_complex_2, test_complex_2_create(pool, 2, "c2", apr_time_now()), -1);
 	osip_ring_add(obj->sub_obj->ring_complex_2, test_complex_2_create(pool, 3, "c3", apr_time_now()), -1);
 
-	func_call_yaproxy_lock(pool, "yaproxy_lock_t", (void *)obj);
+	func_call_yaproxy_lock_set(pool, "yaproxy_lock_t", (void *)obj);
 
 	return 0;
 }
 
+void* func_call_test_complex2_get(apr_pool_t *pool, char *key)
+{
+	test_complex_2_t *result = apr_pcalloc(pool, sizeof(test_complex_2_t));
+	result->count_2 = atoi(db_get_value_string_and_time(pool, key, "count_2"));
+	result->str_2 = db_get_value_string_and_time(pool, key, "str_2");
+	result->timer_2 = atol(db_get_value_string_and_time(pool, key, "timer_2"));
 
+	return result;
+}
+
+void* func_call_test_complex1_get(apr_pool_t *pool, char *key)
+{
+	test_complex_1_t *result = apr_pcalloc(pool, sizeof(test_complex_1_t));
+	result->count_1 = atoi(db_get_value_string_and_time(pool, key, "count_1"));
+	result->str_1 = db_get_value_string_and_time(pool, key, "str_1");
+	result->timer_1 = atol(db_get_value_string_and_time(pool, key, "timer_1"));
+	result->ring_complex_2 = db_get_value_list(pool, key, "test_complex_2_t", "ring_complex_2", func_call_test_complex2_get);
+	return result;
+}
+
+void* func_call_yaproxy_lock_get(apr_pool_t *pool, char *key)
+{
+	yaproxy_lock_t *result = apr_pcalloc(pool, sizeof(yaproxy_lock_t));
+
+	result->clientID = db_get_value_string_and_time(pool, key, "clientID");
+	result->ipcGbID = db_get_value_string_and_time(pool, key, "ipcGbID");
+	result->level = atoi(db_get_value_string_and_time(pool, key, "level"));
+	result->timer = atol(db_get_value_string_and_time(pool, key, "timer"));
+	result->sub_obj = db_get_value_reference(pool, key, "sub_obj", func_call_test_complex1_get);
+
+END:
+	return result;
+}
+
+int test_proxy_lock_get()
+{
+	int ret = 0;
+	apr_pool_t *pool = NULL;
+	apr_pool_create(&pool, NULL);
+	test_complex_2_t *obj = NULL;
+	osip_ring_t *ring = NULL;
+	osip_ring_iterator_t *it =NULL;
+
+	ring = redis_get_class_id(pool, "yaproxy_lock_t", "clientID", "12345678901234567891", NULL);
+	if(1 != osip_ring_size(ring))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	char *key = (char *)osip_ring_get(ring, 0);
+	key = apr_pstrcat(pool, "yaproxy_lock_t:", key, NULL);
+	yaproxy_lock_t *result = func_call_yaproxy_lock_get(pool, key);
+
+	osip_ring_create_iterator(pool, &it);
+	for(obj = osip_ring_get_first(result->sub_obj->ring_complex_2, it); obj; obj = osip_ring_get_next(it))
+	{
+		printf("obj:%s\n", obj->str_2);
+	}
+	osip_ring_destroy_iterator(it);
+
+END:
+	return ret;
+}
+
+int func_call_yaproxy_lock_del(apr_pool_t *pool, char *key)
+{
+	int ret = -1;
+
+	
+
+	return ret;
+}
+
+int test_proxy_lock_delete()
+{
+	int ret = 0;
+	apr_pool_t *pool = NULL;
+	apr_pool_create(&pool, NULL);
+	test_complex_2_t *obj = NULL;
+	osip_ring_t *ring = NULL;
+	osip_ring_iterator_t *it =NULL;
+
+	ring = redis_get_class_id(pool, "yaproxy_lock_t", "clientID", "12345678901234567891", NULL);
+	if(1 != osip_ring_size(ring))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	char *key = (char *)osip_ring_get(ring, 0);
+	key = apr_pstrcat(pool, "yaproxy_lock_t:", key, NULL);
+	func_call_yaproxy_lock_del(pool, key);
+	db_delete_other_element();
+	return 0;
+}
+
+
+
+/*int test_proxy_lock_update()
+{
+	apr_pool_t *pool = NULL;
+	apr_pool_create(&pool, NULL);
+	yaproxy_lock_t *obj = apr_pcalloc(pool, sizeof(yaproxy_lock_t));
+	osip_ring_t *ring = NULL;
+	osip_ring_iterator_t *it =NULL;
+
+	ring = redis_get_class_id(pool, "yaproxy_lock_t", "clientID", "12345678901234567891", NULL);
+	if(1 != osip_ring_size(ring))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	char *key = (char *)osip_ring_get(ring, 0);
+	key = apr_pstrcat(pool, "yaproxy_lock_t:", key, NULL);
+
+	obj->pool = pool;
+	obj->clientID = apr_pstrdup(pool, "xxx45678901234567891");
+	obj->ipcGbID = apr_pstrdup(pool, "xxx45678901234567892");
+	obj->level = 456;
+	obj->timer = yasips_misc_str_totime_byformat(apr_time_now());
+	obj->sub_obj = apr_pcalloc(pool, sizeof(yaproxy_lock_t));
+	obj->sub_obj->count_1 = 1;
+	obj->sub_obj->str_1 = apr_pstrdup(pool, "test001");
+	obj->sub_obj->timer_1 = apr_time_now();
+	
+	osip_ring_create(pool, &obj->sub_obj->ring_complex_2);
+	osip_ring_add(obj->sub_obj->ring_complex_2, test_complex_2_create(pool, 4, "c4", apr_time_now()), -1);
+	osip_ring_add(obj->sub_obj->ring_complex_2, test_complex_2_create(pool, 5, "c5", apr_time_now()), -1);
+	osip_ring_add(obj->sub_obj->ring_complex_2, test_complex_2_create(pool, 6, "c6", apr_time_now()), -1);
+
+	func_call_yaproxy_lock_update(pool, key, (void *)obj);
+	return 0;
+}
+
+int func_call_yaproxy_lock_update(apr_pool_t *pool, char *key, void *new_value)
+{
+	
+}*/

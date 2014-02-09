@@ -43,7 +43,7 @@ typedef struct test_complex_2
 
 typedef struct yaproxy_lock
 {
-    apr_pool_t *pool;
+	apr_pool_t *pool;
 	char *ipcGbID;/* ipc id */
 	char *clientID;
 	int level;
@@ -94,8 +94,7 @@ int redis_operating_sadd(apr_pool_t *pool, redis_operating_t *handle, char *key,
 
 int redis_operating_srem(apr_pool_t *pool, redis_operating_t *handle, char *key, osip_ring_t *ring, char *str_val);
 
-int redis_operating_sinter(apr_pool_t *pool, const char *ip, int port, 
-						   struct timeval tv, osip_ring_t *key_ring, osip_ring_t **val_ring);
+int redis_operating_sinter(apr_pool_t *pool, redis_operating_t *handle, osip_ring_t *key_ring, osip_ring_t **val_ring);
 
 int redis_operating_sismember(apr_pool_t *pool, redis_operating_t *handle, char *key, char *val);
 
@@ -126,12 +125,12 @@ int redis_operating_zrangbyscore(apr_pool_t *pool, redis_operating_t *handle, ch
 //此处之后的函数，考虑在以后分成独立的h文件：redis_struct.h
 typedef int (*func_call_class)(apr_pool_t *, char *, void *);
 typedef void* (*func_call_get)(apr_pool_t *, char *);
-typedef void* (*func_call_del)(apr_pool_t *, char *);
-typedef void* (*func_call_update)(apr_pool_t *, char *, void *);
+typedef int (*func_call_del)(apr_pool_t *, char *);
+typedef int (*func_call_update)(apr_pool_t *, char *, void *);
 
 int __redis_update_class_id(apr_pool_t *pool, char *type);
 
-osip_ring_t* redis_get_class_id(apr_pool_t *pool, char *type, char *member, ...);
+osip_ring_t* redis_get_class_id(apr_pool_t *pool, char *type, ...);
 
 int __redis_set_class_num(apr_pool_t *pool, redis_operating_t *handle, char *field, char *value);
 
@@ -147,7 +146,7 @@ int __redis_set_class_indices(apr_pool_t *pool, redis_operating_t *handle, char 
 
 int __redis_set_class_zindices(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *member_val);
 
-int redis_del_objects_bymember(apr_pool_t *pool, char *type, char *member, ...);
+int redis_del_objects_bymember(apr_pool_t *pool, char *type, ...);
 
 int redis_del_single_object_byid(apr_pool_t *pool, redis_operating_t *handle, 
 								 char *member_name, char *member_val);
@@ -190,5 +189,21 @@ int db_generate_reference_member(apr_pool_t *pool, redis_operating_t* handle,
 
 int db_generate_list_member(apr_pool_t *pool, redis_operating_t* handle, 
 							char *type, char *name, void *value, int isrelation, func_call_class func);
+
+char *db_get_value_string_and_time(apr_pool_t *pool, const char *key, char *member_name);
+
+void *db_get_value_reference(apr_pool_t *pool, const char *key, char *member_name, func_call_get func);
+
+void *db_get_value_list(apr_pool_t *pool, const char *key, char *type, char *member_name, func_call_get func);
+
+int db_delete_string_member(apr_pool_t *pool, char *key, char *member_name);
+
+int db_delete_timer_member(apr_pool_t *pool, char *key, char *time_key, char *member_name);
+
+int db_delete_reference_member(apr_pool_t *pool, char *key, char *member_name, func_call_del func);
+
+int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, void *member_val, func_call_del func);
+
+int db_delete_other_element(apr_pool_t *pool, char *key);
 
 #endif
