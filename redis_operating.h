@@ -202,7 +202,7 @@ int db_delete_timer_member(apr_pool_t *pool, char *key, char *time_key, char *me
 
 int db_delete_reference_member(apr_pool_t *pool, char *key, char *member_name, func_call_del func);
 
-int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, void *member_val, func_call_del func);
+int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, func_call_del func);
 
 int db_delete_other_element(apr_pool_t *pool, char *key);
 

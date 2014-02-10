@@ -59,7 +59,7 @@ int __redis_operating_execution(redisContext* gClient, char *strcmd, apr_pool_t 
 	if(REDIS_REPLY_ERROR == reply->type)
 	{
 		ret = 0;
-		if(!pool && !reply_result) 
+		if(pool && reply_result) 
 		{
 			reply_result->result = apr_pstrdup(pool, "error");
 			reply_result->type = REDIS_REPLY_ERROR;
@@ -68,7 +68,7 @@ int __redis_operating_execution(redisContext* gClient, char *strcmd, apr_pool_t 
 	else if(REDIS_REPLY_INTEGER == reply->type)
 	{
 		ret = 0;
-		if(NULL != pool && NULL != reply_result) 
+		if(pool && reply_result) 
 		{
 			reply_result->result = apr_psprintf(pool, "%ld", reply->integer);
 			reply_result->type = REDIS_REPLY_INTEGER;
@@ -77,7 +77,7 @@ int __redis_operating_execution(redisContext* gClient, char *strcmd, apr_pool_t 
 	else if(REDIS_REPLY_NIL == reply->type)
 	{
 		ret = 0;
-		if(NULL != pool && NULL != reply_result) 
+		if(pool && reply_result) 
 		{
 			reply_result->result = apr_pstrdup(pool, "nil");
 			reply_result->type = REDIS_REPLY_NIL;
@@ -86,7 +86,7 @@ int __redis_operating_execution(redisContext* gClient, char *strcmd, apr_pool_t 
 	else if(REDIS_REPLY_STATUS == reply->type)
 	{
 		ret = 0;
-		if(NULL != pool && NULL != reply_result) 
+		if(pool && reply_result) 
 		{
 			reply_result->result = apr_pstrdup(pool, reply->str);
 			reply_result->type = REDIS_REPLY_STATUS;
@@ -95,10 +95,19 @@ int __redis_operating_execution(redisContext* gClient, char *strcmd, apr_pool_t 
 	else if(REDIS_REPLY_STRING == reply->type)
 	{
 		ret = 0;
-		if(NULL != pool && NULL != reply_result) 
+		if(pool && reply_result) 
 		{
 			reply_result->result = apr_pstrdup(pool, reply->str);
 			reply_result->type = REDIS_REPLY_STRING;
+		}
+	}
+	else if(REDIS_REPLY_ARRAY == reply->type)
+	{
+		ret = 0;
+		if(pool && reply_result) 
+		{
+			reply_result->result = apr_pstrdup(pool, "Array");
+			reply_result->type = REDIS_REPLY_ARRAY;
 		}
 	}
 	else
@@ -595,13 +604,11 @@ int redis_operating_hdel(apr_pool_t *pool, redis_operating_t *handle, char *key,
 	strcmd = apr_psprintf(pool, "HDEL %s %s", key, field);
 	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
 	ret = __redis_operating_execution(handle->connect, strcmd, pool, reply_result);
-	if(ret != 0 || 3 != reply_result->type)
-	{
-		printf("Info.redis command exec failed.[%s:%d]\n",__FILE__, __LINE__);
+
+	if(ret == 0 && (3 == reply_result->type || (5 == reply_result->type && 0 == strcasecmp(reply_result->result, "QUEUED"))))
+		ret = 0;
+	else
 		ret = -1;
-		goto END;
-	}
-	ret = 0;
 
 END:
     if (0 != ret)
@@ -609,7 +616,6 @@ END:
         apr_pool_cleanup_run(handle->pool, handle, __cleanup_redis_operating);
 	}
 	return ret;
-
 }
 
 int redis_operating_set(apr_pool_t *pool, const char *ip, int port, struct timeval tv, char *key, char *value, int ex_flag)
@@ -1004,7 +1010,7 @@ int redis_operating_srem(apr_pool_t *pool, redis_operating_t *handle, char *key,
 	apr_pool_create(&subpool1, pool);
 	strcmd->pool = subpool1;
 
-	if(NULL == ring || NULL == key || NULL == pool)
+	if(NULL == key || NULL == pool)
 	{
 		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
 		ret = -1;
@@ -1086,7 +1092,7 @@ int redis_operating_scard(apr_pool_t *pool, redis_operating_t *handle, char *key
 	}
 
 	if(reply_result && 3 == reply_result->type)
-		ret = reply_result->result;
+		ret = atoi(reply_result->result);
 	else
 		ret = -1;
 
@@ -1252,12 +1258,11 @@ int redis_operating_del(apr_pool_t *pool, redis_operating_t *handle, char *key)
 		goto END;
 	}
 
-	if(1 != reply_result->type)
-	{
+	if(reply_result && (1 == reply_result->type || (5 == reply_result->type && 0 == strcasecmp(reply_result->result, "QUEUED"))))
+		ret = 0;
+	else
 		ret = -1;
-		goto END;
-	}
-	ret = 0;
+
 END:
 	return ret;
 }
@@ -1419,7 +1424,7 @@ int redis_operating_zrem(apr_pool_t *pool, redis_operating_t *handle, char *key,
 	apr_pool_create(&subpool1, pool);
 	strcmd->pool = subpool1;
 
-	if(NULL == ring || NULL == key || NULL == pool)
+	if(NULL == key || NULL == pool)
 	{
 		printf("Info.Connect to redis failed.[%s:%d]\n",__FILE__, __LINE__);
 		ret = -1;
@@ -1441,7 +1446,7 @@ int redis_operating_zrem(apr_pool_t *pool, redis_operating_t *handle, char *key,
 	}
 	else
 	{
-		strcmd->string = apr_pstrcat(subpool2, strcmd->string, " ", str_val, " ", NULL);
+		strcmd->string = apr_pstrcat(strcmd->pool, strcmd->string, " ", str_val, " ", NULL);
 	}
 	
 	reply_result = apr_pcalloc(pool, sizeof(redis_reply_result_t));
@@ -1459,6 +1464,7 @@ int redis_operating_zrem(apr_pool_t *pool, redis_operating_t *handle, char *key,
 		ret = -1;
 
 END:
+	apr_pool_destroy(strcmd->pool);
 	return ret;
 }
 
@@ -2120,14 +2126,14 @@ int redis_del_single_object_byid(apr_pool_t *pool, redis_operating_t *handle,
 	int ret = -1;
 	char *key = NULL;
 
-	key = apr_psprintf(pool, "%s:%d:_indices", handle->type, handle->id);
+	key = apr_psprintf(pool, "%s:%s:_indices", handle->type, handle->id);
 	if(0 != __redis_del_single_object_dictset(pool, handle, key, member_name, member_val))
 	{
 		ret = -1;
 		goto END;
 	}
 
-	key = apr_psprintf(pool, "%s:%d:_zindices", handle->type, handle->id);
+	key = apr_psprintf(pool, "%s:%s:_zindices", handle->type, handle->id);
 	if(0 != __redis_del_single_object_dictset(pool, handle, key, member_name, member_val))
 	{
 		ret = -1;
@@ -2150,9 +2156,9 @@ int __redis_del_single_object_dictset(apr_pool_t *pool, redis_operating_t *handl
 	char *tmp = NULL;
 
 	tmp = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, member_val);
-	if(0 != redis_operating_sismember(pool, handle, member_name, member_val))
+	if(0 != redis_operating_sismember(pool, handle, key, tmp))
 	{
-		ret = -1;
+		ret = 0;
 		goto END;
 	}
 
@@ -2506,12 +2512,8 @@ int db_generate_list_member(apr_pool_t *pool, redis_operating_t* handle,
 	if(type)
 	{
 		sub_id = func(pool, type, value);
-		tmp = apr_psprintf(pool, "%s:%d", type, sub_id);
 	}
-	else
-	{
-		tmp = (char *)value;
-	}
+	tmp = apr_psprintf(pool, "%s:%d:%s", handle->type, handle->id, name);
 
 	if(0 != __redis_set_class_num(pool, handle, name, tmp))
 	{
@@ -2693,10 +2695,11 @@ int db_delete_string_member(apr_pool_t *pool, char *key, char *member_name)
 	char *str_val = NULL;
 	char *tmp_key = NULL;
 
-	type=  apr_strtok(tmp_key, ":", &p);
+	tmp_key = apr_pstrdup(pool, key);
+	type = apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, -1);
+	handle = redis_operating_create(pool, type, atoi(id), -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2753,10 +2756,11 @@ int db_delete_timer_member(apr_pool_t *pool, char *key, char *time_key, char *me
 	redis_operating_t *handle = NULL;
 	char *tmp_key = NULL;
 
+	tmp_key = apr_pstrdup(pool, key);
 	type=  apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, -1);
+	handle = redis_operating_create(pool, type, atoi(id), -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2818,12 +2822,14 @@ int db_delete_reference_member(apr_pool_t *pool, char *key, char *member_name, f
 	char *id = NULL;
 	char *p = NULL;
 	redis_operating_t *handle = NULL;
+	char *str_val = NULL;
 	char *tmp_key = NULL;
 
+	tmp_key = apr_pstrdup(pool, key);
 	type=  apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, -1);
+	handle = redis_operating_create(pool, type, atoi(id), -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2878,7 +2884,7 @@ END:
 	return ret;
 }
 
-int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, void *member_val, func_call_del func)
+int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, func_call_del func)
 {
 	int ret = -1;
 	char *type = NULL;
@@ -2887,11 +2893,15 @@ int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, void *
 	redis_operating_t *handle = NULL;
 	char *str_val = NULL;
 	char *tmp_key = NULL;
+	osip_ring_t *ring = NULL;
+	osip_ring_iterator_t *it = NULL;
+	void *sub_obj = NULL;
 
+	tmp_key = apr_pstrdup(pool, key);
 	type=  apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	handle = redis_operating_create(pool, type, id, -1);
+	handle = redis_operating_create(pool, type, atoi(id), -1);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -2904,11 +2914,22 @@ int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, void *
 		goto END;
 	}
 
-	if(0 != func(pool, str_val))
+	if(0 != redis_operating_smembers(pool, handle, str_val, &ring))
 	{
 		ret = -1;
 		goto END;
 	}
+
+	osip_ring_create_iterator(pool, &it);
+	for(sub_obj = osip_ring_get_first(ring, it); sub_obj; sub_obj = osip_ring_get_next(it))
+	{
+		if(0 != func(pool, (char *)sub_obj))
+		{
+			ret = -1;
+			goto END;
+		}
+	}
+	osip_ring_destroy_iterator(it);
 
 	handle = redis_operating_nowatch_init(pool, type, id);
 	if(NULL == handle)
@@ -2923,7 +2944,7 @@ int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, void *
 		goto END;
 	}
 
-	str_val = apr_psprintf(pool, "%s:%d:%s", type, id, member_name);
+	str_val = apr_psprintf(pool, "%s:%s:%s", type, id, member_name);
 	if(0 != redis_operating_del(pool, handle, str_val))
 	{
 		ret = -1;
@@ -2963,7 +2984,8 @@ int db_delete_other_element(apr_pool_t *pool, char *key)
 	char *str_val = NULL;
 	char *tmp_key = NULL;
 
-	type=  apr_strtok(tmp_key, ":", &p);
+	tmp_key = apr_pstrdup(pool, key);
+	type = apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 	
 	char *str_val_hash = apr_psprintf(pool, " %s:%d ", type, id);

@@ -182,7 +182,8 @@ int main()
 
 	//test_thread_pool();
 	test_proxy_lock_set();
-	test_proxy_lock_get();
+	test_proxy_lock_delete();
+	//test_proxy_lock_get();
 	//test_timeheap();
 	return;
 }
@@ -519,11 +520,38 @@ END:
 	return ret;
 }
 
+int func_call_test_complex2_del(apr_pool_t *pool, char *key)
+{
+	int ret = 0;
+
+	db_delete_string_member(pool, key, "count_2");
+	db_delete_string_member(pool, key, "str_2");
+	db_delete_timer_member(pool, key, "test_timeheap", "timer_2");
+
+	return ret;
+}
+
+int func_call_test_complex1_del(apr_pool_t *pool, char *key)
+{
+	int ret = 0;
+
+	db_delete_string_member(pool, key, "count_1");
+	db_delete_string_member(pool, key, "str_1");
+	db_delete_timer_member(pool, key, "test_timeheap", "timer_1");
+	db_delete_list_member(pool, key, "ring_complex_2", func_call_test_complex2_del);
+
+	return ret;
+}
+
 int func_call_yaproxy_lock_del(apr_pool_t *pool, char *key)
 {
-	int ret = -1;
+	int ret = 0;
 
-	
+	db_delete_string_member(pool, key, "clientID");
+	db_delete_string_member(pool, key, "ipcGbID");
+	db_delete_string_member(pool, key, "level");
+	db_delete_timer_member(pool, key, "test_timeheap", "timer");
+	db_delete_reference_member(pool, key, "sub_obj", func_call_test_complex1_del);
 
 	return ret;
 }
@@ -547,11 +575,10 @@ int test_proxy_lock_delete()
 	char *key = (char *)osip_ring_get(ring, 0);
 	key = apr_pstrcat(pool, "yaproxy_lock_t:", key, NULL);
 	func_call_yaproxy_lock_del(pool, key);
-	db_delete_other_element();
+	//db_delete_other_element();
+END:
 	return 0;
 }
-
-
 
 /*int test_proxy_lock_update()
 {
