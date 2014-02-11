@@ -182,8 +182,7 @@ int main()
 
 	//test_thread_pool();
 	test_proxy_lock_set();
-	test_proxy_lock_delete();
-	//test_proxy_lock_get();
+	test_proxy_lock_update();
 	//test_timeheap();
 	return;
 }
@@ -423,7 +422,7 @@ test_complex_2_t* test_complex_2_create(apr_pool_t *pool, int count_2, char *str
 {
 	test_complex_2_t *result = apr_pcalloc(pool, sizeof(test_complex_2_t));
 	result->count_2 = count_2;
-	result->str_2 = str_2;
+	result->str_2 = apr_pstrdup(pool, str_2);
 	result->timer_2 = timer_2;
 
 	return result;
@@ -527,6 +526,7 @@ int func_call_test_complex2_del(apr_pool_t *pool, char *key)
 	db_delete_string_member(pool, key, "count_2");
 	db_delete_string_member(pool, key, "str_2");
 	db_delete_timer_member(pool, key, "test_timeheap", "timer_2");
+	db_delete_other_element(pool, key);
 
 	return ret;
 }
@@ -539,6 +539,7 @@ int func_call_test_complex1_del(apr_pool_t *pool, char *key)
 	db_delete_string_member(pool, key, "str_1");
 	db_delete_timer_member(pool, key, "test_timeheap", "timer_1");
 	db_delete_list_member(pool, key, "ring_complex_2", func_call_test_complex2_del);
+	db_delete_other_element(pool, key);
 
 	return ret;
 }
@@ -552,6 +553,7 @@ int func_call_yaproxy_lock_del(apr_pool_t *pool, char *key)
 	db_delete_string_member(pool, key, "level");
 	db_delete_timer_member(pool, key, "test_timeheap", "timer");
 	db_delete_reference_member(pool, key, "sub_obj", func_call_test_complex1_del);
+	db_delete_other_element(pool, key);
 
 	return ret;
 }
@@ -575,18 +577,18 @@ int test_proxy_lock_delete()
 	char *key = (char *)osip_ring_get(ring, 0);
 	key = apr_pstrcat(pool, "yaproxy_lock_t:", key, NULL);
 	func_call_yaproxy_lock_del(pool, key);
-	//db_delete_other_element();
 END:
 	return 0;
 }
 
-/*int test_proxy_lock_update()
+int test_proxy_lock_update()
 {
 	apr_pool_t *pool = NULL;
 	apr_pool_create(&pool, NULL);
 	yaproxy_lock_t *obj = apr_pcalloc(pool, sizeof(yaproxy_lock_t));
 	osip_ring_t *ring = NULL;
 	osip_ring_iterator_t *it =NULL;
+	int ret = 0;
 
 	ring = redis_get_class_id(pool, "yaproxy_lock_t", "clientID", "12345678901234567891", NULL);
 	if(1 != osip_ring_size(ring))
@@ -603,7 +605,7 @@ END:
 	obj->ipcGbID = apr_pstrdup(pool, "xxx45678901234567892");
 	obj->level = 456;
 	obj->timer = yasips_misc_str_totime_byformat(apr_time_now());
-	obj->sub_obj = apr_pcalloc(pool, sizeof(yaproxy_lock_t));
+	obj->sub_obj = apr_pcalloc(pool, sizeof(test_complex_1_t));
 	obj->sub_obj->count_1 = 1;
 	obj->sub_obj->str_1 = apr_pstrdup(pool, "test001");
 	obj->sub_obj->timer_1 = apr_time_now();
@@ -614,10 +616,43 @@ END:
 	osip_ring_add(obj->sub_obj->ring_complex_2, test_complex_2_create(pool, 6, "c6", apr_time_now()), -1);
 
 	func_call_yaproxy_lock_update(pool, key, (void *)obj);
+
+END:
+	return ret;
+}
+
+/*int func_call_test_complex2_update(apr_pool_t *pool, char *key, void *new_value)
+{
+	test_complex_2_t *obj = (test_complex_2_t *)new_value;
+	db_update_string_member(pool, key, "count_2", apr_psprintf(pool, "%d", obj->count_2));
+	db_update_string_member(pool, key, "str_2", obj->str_2);
+	db_update_timer_member(pool, key, "test_timeheap", "timer_2", obj->timer_2);
+
+	return 0;
+}*/
+
+int func_call_test_complex1_update(apr_pool_t *pool, char *key, void *new_value)
+{
+	test_complex_1_t *obj = (test_complex_1_t *)new_value;
+
+	db_update_string_member(pool, key, "count_1", apr_psprintf(pool, "%d", obj->count_1));
+	db_update_string_member(pool, key, "str_1", obj->str_1);
+	db_update_timer_member(pool, key, "test_timeheap", "timer_1", obj->timer_1);
+	db_update_list_member(pool, key, "test_complex_2_t", "ring_complex_2", obj->ring_complex_2, 
+						  func_call_test_complex2_del, func_call_test_complex2_set);
+
 	return 0;
 }
 
 int func_call_yaproxy_lock_update(apr_pool_t *pool, char *key, void *new_value)
 {
-	
-}*/
+	yaproxy_lock_t *obj = (yaproxy_lock_t *)new_value;
+
+	db_update_string_member(pool, key, "clientID", obj->clientID);
+	db_update_string_member(pool, key, "ipcGbID", obj->ipcGbID);
+	db_update_string_member(pool, key, "level", apr_psprintf(pool, "%d", obj->level));
+	db_update_timer_member(pool, key, "test_timeheap", "timer", obj->timer);
+	db_update_reference_member(pool, key, "sub_obj", (void *)obj->sub_obj, func_call_test_complex1_del, func_call_test_complex1_update);
+
+	return 0;
+}

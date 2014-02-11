@@ -158,7 +158,7 @@ int __redis_del_single_object_memberset(apr_pool_t *pool, redis_operating_t *han
 
 int __redis_del_single_object_timerheap(apr_pool_t *pool, redis_operating_t *handle, char *key);
 
-int redis_update_single_object_byid(apr_pool_t *pool, redis_operating_t *handle, char member_name, char *new_member_val);
+int redis_update_single_object_byid(apr_pool_t *pool, redis_operating_t *handle, char* member_name, char *new_member_val);
 
 int __redis_update_single_object_dictset(apr_pool_t *pool, redis_operating_t *handle, char *member_name, char *old_member_val, 
 										 char *new_member_val, char *key);
@@ -205,5 +205,15 @@ int db_delete_reference_member(apr_pool_t *pool, char *key, char *member_name, f
 int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, func_call_del func);
 
 int db_delete_other_element(apr_pool_t *pool, char *key);
+
+int db_update_string_member(apr_pool_t *pool, char *key, char *member_name, char *new_value);
+
+int db_update_timer_member(apr_pool_t *pool, char *key, char *time_key, char *member_name, apr_time_t new_value);
+
+int db_update_reference_member(apr_pool_t *pool, char *key, char *member_name, void *new_value,
+							   func_call_del func_del, func_call_update func_update);
+
+int db_update_list_member(apr_pool_t *pool, char *key, char *member_type, char *member_name, void *value, 
+							 func_call_del func_del, func_call_update func_update);
 
 #endif

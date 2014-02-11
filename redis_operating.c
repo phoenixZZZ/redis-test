@@ -2252,7 +2252,7 @@ int __redis_update_single_object_memberset(apr_pool_t *pool, char *type, char *m
 int redis_update_single_object_timerheap(apr_pool_t *pool, char *key, char *type, int id);
 */
 
-int redis_update_single_object_byid(apr_pool_t *pool, redis_operating_t *handle, char member_name, char *new_member_val)
+int redis_update_single_object_byid(apr_pool_t *pool, redis_operating_t *handle, char* member_name, char* new_member_val)
 {
 	int ret = -1;
 	char *key = NULL;
@@ -2279,6 +2279,7 @@ int redis_update_single_object_byid(apr_pool_t *pool, redis_operating_t *handle,
 		goto END;
 	}
 
+	key = apr_psprintf(pool, "%s:%d", handle->type, handle->id);
 	if(0 != redis_operating_hset(pool, handle, key, member_name, new_member_val))
 	{
 		ret = -1;
@@ -2303,7 +2304,7 @@ int __redis_update_single_object_dictset(apr_pool_t *pool, redis_operating_t *ha
 	member = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, old_member_val);
 	if(0 != redis_operating_sismember(pool, handle, key, member))
 	{
-		ret = -1;
+		ret = 0;
 		goto END;
 	}
 
@@ -2336,16 +2337,18 @@ int __redis_update_single_object_memberset(apr_pool_t *pool, redis_operating_t *
 {
 	int ret = -1;
 	char *key = NULL;
+	char *value = NULL;
 
 	key = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, old_member_val);
-	if(0 != __redis_del_single_object_memberset(pool, handle, key))
+	if(0 != __redis_del_single_object_memberset(pool, handle, key))	
 	{
 		ret = -1;
 		goto END;
 	}
 
 	key = apr_psprintf(pool, "%s:%s:%s", handle->type, member_name, new_member_val);
-	if(0 != redis_operating_sadd(pool, handle, key, NULL, handle->id))
+	value = apr_psprintf(pool, "%d", handle->id);
+	if(0 != redis_operating_sadd(pool, handle, key, NULL, value))
 	{
 		ret = -1;
 		goto END;
@@ -2380,6 +2383,12 @@ int db_generate_string_member(apr_pool_t *pool, redis_operating_t* handle,
 	char *hash_val = NULL;
 
 	if(0 != __redis_set_class_num(pool, handle, name, value))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != __redis_set_class_all(pool, handle))
 	{
 		ret = -1;
 		goto END;
@@ -2424,6 +2433,12 @@ int db_generate_timer_member(apr_pool_t *pool, redis_operating_t* handle, char *
 
 	tmp = apr_psprintf(pool, "%ld", value);
 	if(0 != __redis_set_class_num(pool, handle, name, tmp))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != __redis_set_class_all(pool, handle))
 	{
 		ret = -1;
 		goto END;
@@ -2482,6 +2497,12 @@ int db_generate_reference_member(apr_pool_t *pool, redis_operating_t* handle,
 		goto END;
 	}
 	
+	if(0 != __redis_set_class_all(pool, handle))
+	{
+		ret = -1;
+		goto END;
+	}
+
 	if(0 != isrelation)
 	{
 		if(0 != __redis_set_class_memberset(pool, handle, name, tmp))
@@ -2516,6 +2537,12 @@ int db_generate_list_member(apr_pool_t *pool, redis_operating_t* handle,
 	tmp = apr_psprintf(pool, "%s:%d:%s", handle->type, handle->id, name);
 
 	if(0 != __redis_set_class_num(pool, handle, name, tmp))
+	{
+		ret = -1;
+		goto END;
+	}
+
+	if(0 != __redis_set_class_all(pool, handle))
 	{
 		ret = -1;
 		goto END;
@@ -2928,6 +2955,26 @@ int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, func_c
 			ret = -1;
 			goto END;
 		}
+
+		handle = redis_operating_nowatch_init(pool, type, id);
+		if(NULL == handle)
+		{
+			ret = -1;
+			goto END;
+		}
+
+		if(0 != redis_del_single_object_byid(handle->pool, handle, member_name, (char *)sub_obj))
+		{
+			ret = -1;
+			goto END;
+		}
+
+		if(0 != redis_operating_exec(handle->pool, handle))
+		{
+			ret = -1;
+			goto END;
+		}
+		handle = NULL;
 	}
 	osip_ring_destroy_iterator(it);
 
@@ -2938,11 +2985,11 @@ int db_delete_list_member(apr_pool_t *pool, char *key, char *member_name, func_c
 		goto END;
 	}
 
-	if(0 != redis_del_single_object_byid(handle->pool, handle, member_name, str_val))
+	/*if(0 != redis_del_single_object_byid(handle->pool, handle, member_name, str_val))
 	{
 		ret = -1;
 		goto END;
-	}
+	}*/
 
 	str_val = apr_psprintf(pool, "%s:%s:%s", type, id, member_name);
 	if(0 != redis_operating_del(pool, handle, str_val))
@@ -2988,20 +3035,20 @@ int db_delete_other_element(apr_pool_t *pool, char *key)
 	type = apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 	
-	char *str_val_hash = apr_psprintf(pool, " %s:%d ", type, id);
-	char *str_val_indicts = apr_psprintf(pool, " %s:%d:_indices ", type, id);
-	char *str_val_zindicts = apr_psprintf(pool, " %s:%d:_zindices ", type, id);
+	char *str_val_hash = apr_psprintf(pool, " %s:%s ", type, id);
+	char *str_val_indicts = apr_psprintf(pool, " %s:%s:_indices ", type, id);
+	char *str_val_zindicts = apr_psprintf(pool, " %s:%s:_zindices ", type, id);
 	str_val = apr_pstrcat(pool, str_val_hash, str_val_indicts, str_val_zindicts, NULL);
 
-	handle = redis_operating_watch_init(pool, type, id, str_val);
+	handle = redis_operating_watch_init(pool, type, atoi(id), str_val);
 	if(NULL == handle)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	char *str_val_all = apr_psprintf(pool, "%s:all", type, id);
-	if(0 != redis_operating_srem(pool, handle, str_val_all, NULL, atoi(id)))
+	char *str_val_all = apr_psprintf(pool, "%s:all", type);
+	if(0 != redis_operating_srem(pool, handle, str_val_all, NULL, str_val_hash))
 	{
 		ret = -1;
 		goto END;
@@ -3050,14 +3097,15 @@ int db_update_string_member(apr_pool_t *pool, char *key, char *member_name, char
 	char *str_val = NULL;
 	char *tmp_key = NULL;
 
+	tmp_key = apr_pstrdup(pool, key);
 	type=  apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
-	char *str_val_hash = apr_psprintf(pool, " %s:%d ", type, id);
-	char *str_val_indicts = apr_psprintf(pool, " %s:%d:_indices ", type, id);
-	char *str_val_zindicts = apr_psprintf(pool, " %s:%d:_zindices ", type, id);
+	char *str_val_hash = apr_psprintf(pool, " %s:%s ", type, id);
+	char *str_val_indicts = apr_psprintf(pool, " %s:%s:_indices ", type, id);
+	char *str_val_zindicts = apr_psprintf(pool, " %s:%s:_zindices ", type, id);
 	str_val = apr_pstrcat(pool, str_val_hash, str_val_indicts, str_val_zindicts, NULL);
 
-	handle = redis_operating_watch_init(pool, type, id, str_val);
+	handle = redis_operating_watch_init(pool, type, atoi(id), str_val);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -3085,7 +3133,7 @@ END:
 	}
 	return ret;
 }
-int redis_update_timer_member(apr_pool_t *pool, char *key, char *time_key, char *member_name, apr_time_t new_value)
+int db_update_timer_member(apr_pool_t *pool, char *key, char *time_key, char *member_name, apr_time_t new_value)
 {
 	int ret = -1;
 	char *type = NULL;
@@ -3095,14 +3143,15 @@ int redis_update_timer_member(apr_pool_t *pool, char *key, char *time_key, char 
 	char *str_val = NULL;
 	char *tmp_key = NULL;
 
+	tmp_key = apr_pstrdup(pool, key);
 	type=  apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
-	char *str_val_hash = apr_psprintf(pool, " %s:%d ", type, id);
-	char *str_val_indicts = apr_psprintf(pool, " %s:%d:_indices ", type, id);
-	char *str_val_zindicts = apr_psprintf(pool, " %s:%d:_zindices ", type, id);
+	char *str_val_hash = apr_psprintf(pool, " %s:%s ", type, id);
+	char *str_val_indicts = apr_psprintf(pool, " %s:%s:_indices ", type, id);
+	char *str_val_zindicts = apr_psprintf(pool, " %s:%s:_zindices ", type, id);
 	str_val = apr_pstrcat(pool, str_val_hash, str_val_indicts, str_val_zindicts, NULL);
 
-	handle = redis_operating_watch_init(pool, type, id, str_val);
+	handle = redis_operating_watch_init(pool, type, atoi(id), str_val);
 	if(NULL == handle)
 	{
 		ret = -1;
@@ -3137,7 +3186,7 @@ END:
 	}
 	return ret;
 }
-int redis_update_reference_member(apr_pool_t *pool, char *key, char *member_name, void *new_value,
+int db_update_reference_member(apr_pool_t *pool, char *key, char *member_name, void *new_value,
 								  func_call_del func_del, func_call_update func_update)
 {
 	int ret = -1;
@@ -3148,6 +3197,7 @@ int redis_update_reference_member(apr_pool_t *pool, char *key, char *member_name
 	char *str_val = NULL;
 	char *tmp_key = NULL;
 
+	tmp_key = apr_pstrdup(pool, key);
 	type=  apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
@@ -3184,7 +3234,7 @@ END:
 	}
 	return ret;
 }
-int redis_update_list_member(apr_pool_t *pool, char *key, char *member_name, void *value, 
+int db_update_list_member(apr_pool_t *pool, char *key, char *member_type, char *member_name, void *value, 
 							 func_call_del func_del, func_call_update func_update)
 {
 	int ret = -1;
@@ -3198,34 +3248,28 @@ int redis_update_list_member(apr_pool_t *pool, char *key, char *member_name, voi
 	osip_ring_t *ret_ring = NULL;
 	char *tmp_key = NULL;
 
+	tmp_key = apr_pstrdup(pool, key);
 	type=  apr_strtok(tmp_key, ":", &p);
 	id = apr_strtok(NULL, ":" ,&p);
 
-	redis_operating_t *handle = redis_operating_create(pool, type, id, 0);
+	redis_operating_t *handle = redis_operating_create(pool, type, atoi(id), 0);
 	if(NULL == handle)
 	{
 		ret = -1;
 		goto END;
 	}
 
-	ret = __redis_get_class_list(handle->pool, handle, key, member_name, &val_ring);
-	if(ret != 0 || NULL == val_ring)
-	{
-		ret = -1;
-		goto END;
-	}
+	db_delete_list_member(pool, key, member_name, func_del);
+
+	ret_ring = (osip_ring_t *)value;
 
 	osip_ring_create_iterator(pool, &it);
-	for(obj = osip_ring_get_first(val_ring, it); obj; obj = osip_ring_get_next(it))
+	for(obj = osip_ring_get_first(ret_ring, it); obj; obj = osip_ring_get_next(it))
 	{
-		char *tmp = (char *)obj;
-		if(obj) 
-		{
-			func_del(pool, tmp);
-			func_update(pool, tmp, value);
-		}
+		db_generate_list_member(pool, handle, member_type, member_name, obj, 1, func_update);
 	}
 	osip_ring_destroy_iterator(it);
+
 
 END:
 	if(handle)
@@ -3268,7 +3312,7 @@ redis_operating_t *redis_operating_watch_init(apr_pool_t *pool, char *type, int 
 	redis_operating_t *handle = NULL;
 	handle = redis_operating_create(pool, type, id, 1);
 	if(NULL == handle) goto END;
-	if(watch) redis_operating_watch(pool, type, watch);
+	if(watch) redis_operating_watch(pool, handle, watch);
 	redis_operating_mutli(handle->pool, handle);
 END:
 	return handle;
